@@ -1,0 +1,35 @@
+{
+  "name": "skytrace-sensor-map",
+  "version": "0.1.0",
+  "description": "Distributed environmental sensor mapping dashboard for ESP32 networks",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node src/index.js",
+    "setup-boundaries": "bash tools/setup_boundaries.sh"
+  },
+  "keywords": [
+    "environmental",
+    "sensors",
+    "ESP32",
+    "mapping",
+    "MQTT",
+    "dashboard"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@clickhouse/client": "^1.14.0",
+    "compression": "^1.7.4",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "geoip-lite": "^1.4.10",
+    "h3-js": "^4.4.0",
+    "mqtt": "^5.3.6",
+    "pmtiles": "^4.3.0",
+    "uuid": "^9.0.1"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}

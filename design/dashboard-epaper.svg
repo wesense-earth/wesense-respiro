@@ -1,0 +1,146 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 480" font-family="'Courier New', monospace">
+  <!-- E-Paper background (slight warm white) -->
+  <rect width="800" height="480" fill="#f5f5f0"/>
+
+  <!-- Header with thick border -->
+  <rect x="0" y="0" width="800" height="55" fill="#f5f5f0" stroke="#000" stroke-width="2"/>
+  <text x="20" y="35" fill="#000" font-size="24" font-weight="bold">HOME</text>
+  <text x="680" y="28" fill="#000" font-size="28" font-weight="bold" text-anchor="end">14:32</text>
+  <text x="780" y="28" fill="#333" font-size="14" text-anchor="end">THU 2 JAN</text>
+
+  <!-- Astronomy row -->
+  <rect x="0" y="55" width="800" height="35" fill="#e8e8e0" stroke="#000" stroke-width="1"/>
+  <text x="20" y="78" fill="#000" font-size="14">☀ 06:12 → 20:48</text>
+  <text x="200" y="78" fill="#000" font-size="14">DAY 14h 36m ↑</text>
+  <text x="420" y="78" fill="#000" font-size="14">|</text>
+  <text x="450" y="78" fill="#000" font-size="14">● WAXING GIBBOUS</text>
+
+  <!-- Main metrics - large readable values -->
+  <g transform="translate(0, 100)">
+    <!-- Temperature -->
+    <rect x="20" y="0" width="240" height="100" fill="none" stroke="#000" stroke-width="2"/>
+    <text x="140" y="30" fill="#333" font-size="14" text-anchor="middle">TEMPERATURE</text>
+    <text x="140" y="70" fill="#000" font-size="40" font-weight="bold" text-anchor="middle">24.2°C</text>
+    <text x="140" y="90" fill="#555" font-size="12" text-anchor="middle">Feels 26°C</text>
+
+    <!-- Humidity -->
+    <rect x="280" y="0" width="240" height="100" fill="none" stroke="#000" stroke-width="2"/>
+    <text x="400" y="30" fill="#333" font-size="14" text-anchor="middle">HUMIDITY</text>
+    <text x="400" y="70" fill="#000" font-size="40" font-weight="bold" text-anchor="middle">68%</text>
+    <text x="400" y="90" fill="#555" font-size="12" text-anchor="middle">Dew pt 17°C</text>
+
+    <!-- Pressure -->
+    <rect x="540" y="0" width="240" height="100" fill="none" stroke="#000" stroke-width="2"/>
+    <text x="660" y="30" fill="#333" font-size="14" text-anchor="middle">PRESSURE</text>
+    <text x="660" y="70" fill="#000" font-size="40" font-weight="bold" text-anchor="middle">1013</text>
+    <text x="660" y="90" fill="#555" font-size="12" text-anchor="middle">hPa → Steady</text>
+  </g>
+
+  <!-- Hourly timeline -->
+  <g transform="translate(20, 215)">
+    <rect x="0" y="0" width="760" height="65" fill="none" stroke="#000" stroke-width="1"/>
+    <text x="700" y="15" fill="#555" font-size="10" text-anchor="end">LAST 8 HOURS</text>
+
+    <!-- Hour labels -->
+    <g fill="#555" font-size="11" text-anchor="middle">
+      <text x="50" y="30">07</text>
+      <text x="140" y="30">08</text>
+      <text x="230" y="30">09</text>
+      <text x="320" y="30">10</text>
+      <text x="410" y="30">11</text>
+      <text x="500" y="30">12</text>
+      <text x="590" y="30">13</text>
+      <text x="680" y="30">14</text>
+    </g>
+
+    <!-- Temp values -->
+    <g fill="#000" font-size="14" font-weight="bold" text-anchor="middle">
+      <text x="50" y="50">19°</text>
+      <text x="140" y="50">21°</text>
+      <text x="230" y="50">23°</text>
+      <text x="320" y="50">24°</text>
+      <text x="410" y="50">25°</text>
+      <text x="500" y="50">26°</text>
+      <text x="590" y="50">25°</text>
+      <text x="680" y="50">24°</text>
+    </g>
+
+    <!-- Simple bar chart representation -->
+    <g fill="#888">
+      <rect x="35" y="55" width="30" height="3"/>
+      <rect x="125" y="55" width="30" height="5"/>
+      <rect x="215" y="55" width="30" height="7"/>
+      <rect x="305" y="55" width="30" height="8"/>
+      <rect x="395" y="55" width="30" height="9"/>
+      <rect x="485" y="55" width="30" height="10"/>
+      <rect x="575" y="55" width="30" height="9"/>
+      <rect x="665" y="55" width="30" height="8"/>
+    </g>
+  </g>
+
+  <!-- Air Quality Section -->
+  <g transform="translate(20, 295)">
+    <!-- Outdoor -->
+    <rect x="0" y="0" width="370" height="75" fill="none" stroke="#000" stroke-width="2"/>
+    <text x="15" y="25" fill="#000" font-size="14" font-weight="bold">OUTSIDE</text>
+
+    <!-- Quality indicator - empty circle = Good -->
+    <circle cx="340" cy="40" r="12" fill="none" stroke="#000" stroke-width="2"/>
+    <text x="310" y="65" fill="#333" font-size="10" text-anchor="end">AQI 42 GOOD</text>
+
+    <text x="15" y="50" fill="#000" font-size="20" font-weight="bold">PM2.5: 8</text>
+    <text x="120" y="50" fill="#555" font-size="12">µg/m³</text>
+    <text x="15" y="67" fill="#555" font-size="11">NOx: 12  |  VOC: 18</text>
+
+    <!-- Indoor -->
+    <rect x="390" y="0" width="370" height="75" fill="none" stroke="#000" stroke-width="2"/>
+    <text x="405" y="25" fill="#000" font-size="14" font-weight="bold">INSIDE</text>
+
+    <!-- Quality indicator - empty circle = Good -->
+    <circle cx="730" cy="40" r="12" fill="none" stroke="#000" stroke-width="2"/>
+    <text x="700" y="65" fill="#333" font-size="10" text-anchor="end">IAQI 78 GOOD</text>
+
+    <text x="405" y="50" fill="#000" font-size="20" font-weight="bold">CO₂: 720</text>
+    <text x="520" y="50" fill="#555" font-size="12">ppm</text>
+    <text x="405" y="67" fill="#555" font-size="11">3 rooms monitored</text>
+  </g>
+
+  <!-- Room summary (compact) -->
+  <g transform="translate(20, 385)">
+    <rect x="0" y="0" width="760" height="50" fill="none" stroke="#000" stroke-width="1"/>
+
+    <!-- Lounge -->
+    <text x="15" y="20" fill="#000" font-size="11" font-weight="bold">LOUNGE</text>
+    <text x="15" y="35" fill="#333" font-size="10">22°C 45% CO₂ 650</text>
+    <circle cx="100" cy="27" r="6" fill="none" stroke="#000" stroke-width="1.5"/>
+
+    <!-- Bedroom -->
+    <text x="200" y="20" fill="#000" font-size="11" font-weight="bold">BEDROOM</text>
+    <text x="200" y="35" fill="#333" font-size="10">20°C 52% CO₂ 520</text>
+    <circle cx="295" cy="27" r="6" fill="none" stroke="#000" stroke-width="1.5"/>
+    <text x="310" y="32" fill="#333" font-size="9">★</text>
+
+    <!-- Kitchen (with warning pattern) -->
+    <text x="400" y="20" fill="#000" font-size="11" font-weight="bold">KITCHEN</text>
+    <text x="400" y="35" fill="#000" font-size="10" font-weight="bold">24°C 58% CO₂ 890 !</text>
+    <!-- Half-filled circle = Moderate -->
+    <circle cx="510" cy="27" r="6" fill="none" stroke="#000" stroke-width="1.5"/>
+    <path d="M 510 21 A 6 6 0 0 1 510 33" fill="#000"/>
+  </g>
+
+  <!-- Alert message -->
+  <rect x="20" y="445" width="760" height="28" fill="#e0e0d8" stroke="#000" stroke-width="1"/>
+  <text x="35" y="464" fill="#000" font-size="12" font-weight="bold">! KITCHEN CO₂ ELEVATED (890 ppm) — OPEN WINDOW</text>
+
+  <!-- E-paper quality legend -->
+  <g transform="translate(600, 390)">
+    <text x="0" y="0" fill="#666" font-size="8">QUALITY:</text>
+    <circle cx="10" cy="15" r="5" fill="none" stroke="#000" stroke-width="1"/>
+    <text x="20" y="18" fill="#666" font-size="8">Good</text>
+    <circle cx="60" cy="15" r="5" fill="none" stroke="#000" stroke-width="1"/>
+    <path d="M 60 10 A 5 5 0 0 1 60 20" fill="#000"/>
+    <text x="70" y="18" fill="#666" font-size="8">Mod</text>
+    <circle cx="110" cy="15" r="5" fill="#000"/>
+    <text x="120" y="18" fill="#666" font-size="8">Poor</text>
+  </g>
+</svg>
