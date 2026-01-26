@@ -1,0 +1,174 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 560" font-family="system-ui, -apple-system, sans-serif">
+  <defs>
+    <linearGradient id="tempFill" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#f97316;stop-opacity:0.2"/>
+      <stop offset="100%" style="stop-color:#f97316;stop-opacity:0"/>
+    </linearGradient>
+    <linearGradient id="humidFill" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#06b6d4;stop-opacity:0.2"/>
+      <stop offset="100%" style="stop-color:#06b6d4;stop-opacity:0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Main content area (dimmed) -->
+  <rect width="600" height="560" fill="#0f172a"/>
+  <rect width="600" height="560" fill="#000" opacity="0.3"/>
+
+  <!-- Condensed main view -->
+  <rect x="0" y="0" width="600" height="45" fill="#1e293b"/>
+  <text x="20" y="30" fill="#f8fafc" font-size="16" font-weight="600">Home</text>
+  <text x="580" y="30" fill="#94a3b8" font-size="14" text-anchor="end">14:32 Thu 2 Jan</text>
+
+  <!-- ===================== SIDEBAR ===================== -->
+  <rect x="600" y="0" width="400" height="560" fill="#1e293b"/>
+
+  <!-- Sidebar header -->
+  <rect x="600" y="0" width="400" height="50" fill="#334155"/>
+  <text x="620" y="32" fill="#94a3b8" font-size="14">←</text>
+  <text x="645" y="32" fill="#f8fafc" font-size="16" font-weight="600">COMPARE METRICS</text>
+
+  <!-- Toggle: Details / Compare -->
+  <g transform="translate(870, 12)">
+    <rect x="0" y="0" width="110" height="26" rx="6" fill="#0f172a"/>
+    <text x="28" y="18" fill="#64748b" font-size="10" text-anchor="middle">Details</text>
+    <rect x="55" y="2" width="53" height="22" rx="4" fill="#3b82f6"/>
+    <text x="82" y="18" fill="#fff" font-size="10" text-anchor="middle">Compare</text>
+  </g>
+
+  <!-- Metric selector chips -->
+  <g transform="translate(620, 60)">
+    <text x="0" y="0" fill="#94a3b8" font-size="11">Select metrics to compare</text>
+
+    <!-- Active chips -->
+    <rect x="0" y="12" width="100" height="28" rx="14" fill="#f97316" opacity="0.2" stroke="#f97316"/>
+    <circle cx="18" cy="26" r="6" fill="#f97316"/>
+    <text x="32" y="30" fill="#f97316" font-size="11">Temperature</text>
+
+    <rect x="110" y="12" width="80" height="28" rx="14" fill="#06b6d4" opacity="0.2" stroke="#06b6d4"/>
+    <circle cx="128" cy="26" r="6" fill="#06b6d4"/>
+    <text x="142" y="30" fill="#06b6d4" font-size="11">Humidity</text>
+
+    <!-- Inactive chips -->
+    <rect x="200" y="12" width="75" height="28" rx="14" fill="#334155"/>
+    <text x="215" y="30" fill="#64748b" font-size="11">Pressure</text>
+
+    <rect x="285" y="12" width="55" height="28" rx="14" fill="#334155"/>
+    <text x="300" y="30" fill="#64748b" font-size="11">CO₂</text>
+  </g>
+
+  <!-- Current values side by side -->
+  <g transform="translate(620, 110)">
+    <rect x="0" y="0" width="175" height="70" rx="8" fill="#0f172a" stroke="#f97316" stroke-width="1"/>
+    <circle cx="18" cy="22" r="6" fill="#f97316"/>
+    <text x="32" y="26" fill="#f97316" font-size="11">Temperature</text>
+    <text x="15" y="52" fill="#f8fafc" font-size="24" font-weight="600">24.2°C</text>
+
+    <rect x="185" y="0" width="175" height="70" rx="8" fill="#0f172a" stroke="#06b6d4" stroke-width="1"/>
+    <circle cx="203" cy="22" r="6" fill="#06b6d4"/>
+    <text x="217" y="26" fill="#06b6d4" font-size="11">Humidity</text>
+    <text x="200" y="52" fill="#f8fafc" font-size="24" font-weight="600">68%</text>
+  </g>
+
+  <!-- Combined chart with dual Y-axis -->
+  <g transform="translate(620, 195)">
+    <text x="0" y="0" fill="#94a3b8" font-size="12">Overlay Chart</text>
+
+    <!-- Time range tabs - scrollable row -->
+    <g transform="translate(0, -12)">
+      <rect x="0" y="0" width="360" height="26" rx="4" fill="#0f172a"/>
+
+      <rect x="4" y="2" width="28" height="22" rx="4" fill="#334155"/>
+      <text x="18" y="17" fill="#94a3b8" font-size="9" text-anchor="middle">1h</text>
+
+      <rect x="36" y="2" width="28" height="22" rx="4" fill="#334155"/>
+      <text x="50" y="17" fill="#94a3b8" font-size="9" text-anchor="middle">4h</text>
+
+      <rect x="68" y="2" width="28" height="22" rx="4" fill="#334155"/>
+      <text x="82" y="17" fill="#94a3b8" font-size="9" text-anchor="middle">8h</text>
+
+      <rect x="100" y="2" width="32" height="22" rx="4" fill="#3b82f6"/>
+      <text x="116" y="17" fill="#fff" font-size="9" font-weight="500" text-anchor="middle">24h</text>
+
+      <rect x="136" y="2" width="28" height="22" rx="4" fill="#334155"/>
+      <text x="150" y="17" fill="#94a3b8" font-size="9" text-anchor="middle">7d</text>
+
+      <rect x="168" y="2" width="32" height="22" rx="4" fill="#334155"/>
+      <text x="184" y="17" fill="#94a3b8" font-size="9" text-anchor="middle">30d</text>
+
+      <rect x="204" y="2" width="32" height="22" rx="4" fill="#334155"/>
+      <text x="220" y="17" fill="#94a3b8" font-size="9" text-anchor="middle">90d</text>
+
+      <rect x="240" y="2" width="24" height="22" rx="4" fill="#334155"/>
+      <text x="252" y="17" fill="#94a3b8" font-size="9" text-anchor="middle">1y</text>
+
+      <rect x="268" y="2" width="22" height="22" rx="4" fill="#334155"/>
+      <text x="279" y="17" fill="#94a3b8" font-size="9" text-anchor="middle">All</text>
+    </g>
+
+    <!-- Chart area -->
+    <rect x="0" y="15" width="360" height="180" rx="8" fill="#0f172a"/>
+
+    <!-- Left Y axis (Temperature - orange) -->
+    <text x="8" y="35" fill="#f97316" font-size="9">28°</text>
+    <text x="8" y="75" fill="#f97316" font-size="9">24°</text>
+    <text x="8" y="115" fill="#f97316" font-size="9">20°</text>
+    <text x="8" y="155" fill="#f97316" font-size="9">16°</text>
+
+    <!-- Right Y axis (Humidity - cyan) -->
+    <text x="345" y="35" fill="#06b6d4" font-size="9" text-anchor="end">90%</text>
+    <text x="345" y="75" fill="#06b6d4" font-size="9" text-anchor="end">75%</text>
+    <text x="345" y="115" fill="#06b6d4" font-size="9" text-anchor="end">60%</text>
+    <text x="345" y="155" fill="#06b6d4" font-size="9" text-anchor="end">45%</text>
+
+    <!-- Grid lines -->
+    <line x1="30" y1="30" x2="330" y2="30" stroke="#334155" stroke-width="0.5"/>
+    <line x1="30" y1="70" x2="330" y2="70" stroke="#334155" stroke-width="0.5"/>
+    <line x1="30" y1="110" x2="330" y2="110" stroke="#334155" stroke-width="0.5"/>
+    <line x1="30" y1="150" x2="330" y2="150" stroke="#334155" stroke-width="0.5"/>
+
+    <!-- Temperature line (orange) - 24h pattern -->
+    <path d="M 30 130 Q 60 140 90 150 Q 120 155 150 145 Q 180 120 210 85 Q 240 55 270 50 Q 300 60 330 75"
+          fill="none" stroke="#f97316" stroke-width="2" stroke-linecap="round"/>
+    <path d="M 30 130 Q 60 140 90 150 Q 120 155 150 145 Q 180 120 210 85 Q 240 55 270 50 Q 300 60 330 75 L 330 185 L 30 185 Z"
+          fill="url(#tempFill)"/>
+
+    <!-- Humidity line (cyan) - inverse pattern -->
+    <path d="M 30 100 Q 60 90 90 80 Q 120 75 150 85 Q 180 100 210 125 Q 240 145 270 150 Q 300 140 330 120"
+          fill="none" stroke="#06b6d4" stroke-width="2" stroke-linecap="round"/>
+    <path d="M 30 100 Q 60 90 90 80 Q 120 75 150 85 Q 180 100 210 125 Q 240 145 270 150 Q 300 140 330 120 L 330 185 L 30 185 Z"
+          fill="url(#humidFill)"/>
+
+    <!-- Current points -->
+    <circle cx="330" cy="75" r="4" fill="#f97316"/>
+    <circle cx="330" cy="120" r="4" fill="#06b6d4"/>
+
+    <!-- X axis time labels -->
+    <text x="30" y="178" fill="#475569" font-size="8">14:00</text>
+    <text x="110" y="178" fill="#475569" font-size="8">20:00</text>
+    <text x="190" y="178" fill="#475569" font-size="8">02:00</text>
+    <text x="270" y="178" fill="#475569" font-size="8">08:00</text>
+    <text x="320" y="178" fill="#475569" font-size="8">now</text>
+  </g>
+
+  <!-- Correlation insight -->
+  <g transform="translate(620, 400)">
+    <rect x="0" y="0" width="360" height="55" rx="8" fill="#172554"/>
+    <text x="15" y="22" fill="#93c5fd" font-size="12" font-weight="500">📊 Correlation Insight</text>
+    <text x="15" y="42" fill="#94a3b8" font-size="11">Temperature and humidity show inverse pattern (r = −0.78)</text>
+  </g>
+
+  <!-- Stats comparison -->
+  <g transform="translate(620, 470)">
+    <rect x="0" y="0" width="175" height="75" rx="8" fill="#0f172a"/>
+    <circle cx="18" cy="20" r="6" fill="#f97316"/>
+    <text x="30" y="24" fill="#f97316" font-size="10">Temperature 24h</text>
+    <text x="15" y="45" fill="#64748b" font-size="10">Min: <tspan fill="#f8fafc">18.4°C</tspan></text>
+    <text x="15" y="62" fill="#64748b" font-size="10">Max: <tspan fill="#f8fafc">26.8°C</tspan></text>
+
+    <rect x="185" y="0" width="175" height="75" rx="8" fill="#0f172a"/>
+    <circle cx="203" cy="20" r="6" fill="#06b6d4"/>
+    <text x="215" y="24" fill="#06b6d4" font-size="10">Humidity 24h</text>
+    <text x="200" y="45" fill="#64748b" font-size="10">Min: <tspan fill="#f8fafc">52%</tspan></text>
+    <text x="200" y="62" fill="#64748b" font-size="10">Max: <tspan fill="#f8fafc">78%</tspan></text>
+  </g>
+</svg>

@@ -1,0 +1,83 @@
+version: '3.8'
+
+# Sample docker-compose for remote Docker host
+# Copy this file to your Docker host as docker-compose.yml
+# Customize the environment variables and ports for your setup
+
+services:
+  sensor-map:
+    # Use pre-built image (not 'build: .')
+    # Option 1: If loaded from tar file
+    image: wesense-respiro:latest
+
+    # Option 2: If pulled from Docker Hub (uncomment and modify)
+    # image: yourusername/wesense-respiro:latest
+
+    # Option 3: If pulled from private registry (uncomment and modify)
+    # image: your-registry.com:5000/wesense-respiro:latest
+
+    container_name: wesense-respiro
+    restart: unless-stopped
+
+    # Port mapping - UPDATE HOST PORT if needed
+    ports:
+      - "3000:3000"  # HOST:CONTAINER
+      # To use different host port: "8080:3000"
+
+    # Volume mounts
+    volumes:
+      # Optional: Database file for persistence
+      - ./data:/app/data
+
+      # Alternative: Use absolute paths
+      # - /data/wesense/respiro:/app/data
+
+    # Environment variables - UPDATE THESE for your setup
+    environment:
+      # ClickHouse Configuration
+      - CLICKHOUSE_HOST=your-clickhouse-host
+      - CLICKHOUSE_PORT=8123
+      - CLICKHOUSE_DATABASE=wesense
+      - CLICKHOUSE_USERNAME=default
+      - CLICKHOUSE_PASSWORD=
+
+      # MQTT Configuration (optional - for real-time data)
+      - MQTT_BROKER_URL=mqtt://your-mqtt-broker:1883
+      - MQTT_USERNAME=
+      - MQTT_PASSWORD=
+      - MQTT_TOPIC_FILTER=wesense/decoded/#
+
+      # Server Configuration
+      - PORT=3000
+      - HOST=0.0.0.0
+
+      # Database (optional - for persistence)
+      - DB_PATH=/app/data/sensors.db
+
+      # Map Configuration - set to your default location
+      - MAP_CENTER_LAT=-36.848
+      - MAP_CENTER_LNG=174.763
+      - MAP_ZOOM_LEVEL=10
+
+      # Timezone
+      - TZ=UTC
+
+    # Network configuration
+    network_mode: bridge
+
+    # Optional: Resource limits
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '1'
+    #       memory: 512M
+    #     reservations:
+    #       cpus: '0.25'
+    #       memory: 256M
+
+    # Optional: Logging configuration
+    # logging:
+    #   driver: "json-file"
+    #   options:
+    #     max-size: "10m"
+    #     max-file: "3"

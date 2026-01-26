@@ -1,0 +1,63 @@
+# Dependencies
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Git
+.git/
+.gitignore
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Documentation
+*.md
+docs/
+
+# Test files
+test/
+tests/
+*.test.js
+*.spec.js
+
+# Build artifacts
+dist/
+build/
+
+# Database (will be mounted as volume)
+data/
+*.db
+*.sqlite
+
+# Logs
+logs/
+*.log
+
+# Docker files
+Dockerfile
+docker-compose.yml
+docker-compose.remote-host.yml
+.dockerignore
+build-image.sh
+*.tar
+
+# Python virtual env (if any)
+venv/
+.venv/
+
+# Misc
+.DS_Store
+Thumbs.db
+.claude/
+tools/
+start.sh

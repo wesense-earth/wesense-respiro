@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  sensor-map:
+    build: .
+    container_name: wesense-respiro
+    restart: unless-stopped
+
+    # Port mapping - map container port to host port
+    ports:
+      - "3000:3000"  # HOST:CONTAINER
+
+    # Volume mounts
+    volumes:
+      # Optional: Database file for persistence (if using DB_PATH)
+      - ./data:/app/data
+
+    # Environment variables
+    environment:
+      # ClickHouse Configuration
+      - CLICKHOUSE_HOST=your-clickhouse-host
+      - CLICKHOUSE_PORT=8123
+      - CLICKHOUSE_DATABASE=wesense
+      - CLICKHOUSE_USERNAME=default
+      - CLICKHOUSE_PASSWORD=
+
+      # MQTT Configuration (optional - for real-time data)
+      - MQTT_BROKER_URL=mqtt://your-mqtt-broker:1883
+      - MQTT_USERNAME=
+      - MQTT_PASSWORD=
+      - MQTT_TOPIC_FILTER=wesense/decoded/#
+
+      # Server Configuration
+      - PORT=3000
+      - HOST=0.0.0.0
+
+      # Database (optional - for persistence)
+      - DB_PATH=/app/data/sensors.db
+
+      # Map Configuration
+      - MAP_CENTER_LAT=-36.848
+      - MAP_CENTER_LNG=174.763
+      - MAP_ZOOM_LEVEL=10
+
+      # Timezone
+      - TZ=UTC
+
+    # Network mode
+    network_mode: bridge
+
+    # Optional: Resource limits
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '1'
+    #       memory: 512M
