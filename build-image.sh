@@ -1,10 +1,10 @@
 #!/bin/bash
-# Build script for SkyTrace Sensor Map Docker image
+# Build script for WeSense Respiro Docker image
 
 set -e
 
 # Default values
-IMAGE_NAME="skytrace-sensor-map"
+IMAGE_NAME="wesense-respiro"
 IMAGE_TAG="latest"
 SAVE_TAR=false
 REGISTRY=""
@@ -20,10 +20,10 @@ NC='\033[0m' # No Color
 usage() {
     echo "Usage: $0 [OPTIONS]"
     echo ""
-    echo "Build Docker image for SkyTrace Sensor Map"
+    echo "Build Docker image for WeSense Respiro"
     echo ""
     echo "Options:"
-    echo "  -n, --name NAME       Image name (default: skytrace-sensor-map)"
+    echo "  -n, --name NAME       Image name (default: wesense-respiro)"
     echo "  -t, --tag TAG         Image tag (default: latest)"
     echo "  -s, --save            Save image as tar file"
     echo "  -r, --registry URL    Registry URL (e.g., username/repo or registry.com:5000/repo)"
@@ -147,7 +147,7 @@ if [ "$SAVE_TAR" = true ]; then
 elif [ "$PUSH" = true ]; then
     echo "  On your Docker host, run: docker pull ${FULL_IMAGE_NAME}"
 else
-    echo "  Run: docker run -d --name skytrace-sensor-map \\"
+    echo "  Run: docker run -d --name wesense-respiro \\"
     echo "         -p 3000:3000 \\"
     echo "         -v \$(pwd)/data:/app/data \\"
     echo "         -e MQTT_BROKER_URL=mqtt://your-mqtt-broker:1883 \\"

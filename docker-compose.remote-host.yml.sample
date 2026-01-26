@@ -5,7 +5,7 @@ version: '3.8'
 # Customize the environment variables and ports for your setup
 
 services:
-  sensor-map:
+  respiro:
     # Use pre-built image (not 'build: .')
     # Option 1: If loaded from tar file
     image: wesense-respiro:latest

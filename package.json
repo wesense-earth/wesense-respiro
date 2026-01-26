@@ -1,5 +1,5 @@
 {
-  "name": "skytrace-sensor-map",
+  "name": "wesense-respiro",
   "version": "0.1.0",
   "description": "Distributed environmental sensor mapping dashboard for ESP32 networks",
   "main": "src/index.js",

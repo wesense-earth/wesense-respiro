@@ -2177,7 +2177,7 @@ const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
 
 const server = app.listen(PORT, HOST, async () => {
-    console.log(`Sensor Map Server running at http://${HOST}:${PORT}`);
+    console.log(`WeSense Respiro running at http://${HOST}:${PORT}`);
 
     // Start background pre-computation of regional aggregates
     startRegionRefreshLoop();
