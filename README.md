@@ -1,4 +1,4 @@
-# WeSense Sensor Map
+# WeSense Respiro
 
 WeSense Respiro is a community oriented environmental sensor monitoring dashboard that displays real-time wesense environmental data via the wesense ingester plugin system. Notable examples in the plugin system include the premium wesense-esp32_sensorarray-automatic, wesense-ingestger-meshtastic and wesense-ingester-homeassistant. The interactive map plots contributed sensor locations as well as mapping tiles that aims to show highly accurate temperature ratings though crowdsourced data science, not usually available through cheap sensor units. It aggregates sensor readings (temperature, humidity, pressure, CO2, PM2.5, VOC with more coming) and displays them with choropleth region overlays. The map intends to be a feature rich, self hostable solution for mapping, querying and comparing your own local real-time readings against global norms as well as comparing to a rich history afforded by the WeSense distributed IPFS stored environmental telemetry record, queried through clickhouse. Wesense is the only true open telemetry system, in that it's data is not locked behind an API paywall.  WeSense Respiro is a community-driven environmental monitoring dashboard that displays real-time sensor data through the WeSense ingester plugin system. Notable plugins include wesense-esp32-sensorarray-automatic, wesense-ingester-meshtastic, and wesense-ingester-homeassistant.  The interactive map plots contributed sensor locations and uses crowdsourced data science to generate highly accurate regional temperature readings—precision typically unattainable from low-cost sensor units alone. It aggregates environmental readings (temperature, humidity, pressure, CO₂, PM2.5, VOC, with more to come) and visualizes them through choropleth region overlays.  Designed as a feature-rich, self-hostable solution, Respiro enables you to map, query, and compare your local real-time readings against global norms. You can also explore historical trends through the WeSense distributed IPFS-stored telemetry record, queried via ClickHouse. WeSense is a truly open telemetry system—its data is never locked behind an API paywall, the entire database history is freely available to download and host yourself via IPFS.
 
@@ -264,7 +264,7 @@ Example Nginx configuration:
 ```nginx
 server {
     listen 80;
-    server_name sensor-map.example.com;
+    server_name respiro.example.com;
 
     location / {
         proxy_pass http://localhost:3000;
