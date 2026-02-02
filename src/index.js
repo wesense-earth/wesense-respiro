@@ -415,6 +415,13 @@ async function refreshAllRegions() {
         return;
     }
 
+    if (!clickHouseClient.connected) {
+        console.log('Skipping region refresh — ClickHouse not connected');
+        // Try to reconnect for next cycle
+        clickHouseClient.connect();
+        return;
+    }
+
     refreshInProgress = true;
     const startTime = Date.now();
 
@@ -567,27 +574,43 @@ function getPrecomputedData(adminLevel, metric, deployment = 'outdoor', timeWind
 }
 
 /**
+ * Wait for ClickHouse connection, retrying until connected
+ */
+async function waitForClickHouse(maxRetries = 30, intervalMs = 2000) {
+    for (let i = 0; i < maxRetries; i++) {
+        if (clickHouseClient.connected) return true;
+        // Try to connect (first attempt is already in-flight from startup)
+        if (i > 0) await clickHouseClient.connect();
+        if (clickHouseClient.connected) return true;
+        console.log(`Waiting for ClickHouse connection... (${i + 1}/${maxRetries})`);
+        await new Promise(r => setTimeout(r, intervalMs));
+    }
+    return clickHouseClient.connected;
+}
+
+/**
  * Start the background refresh loop
  */
-function startRegionRefreshLoop() {
+async function startRegionRefreshLoop() {
     // Try to load cached data from disk first (instant availability on restart)
     const loadedFromDisk = loadCacheFromDisk();
 
-    if (loadedFromDisk) {
-        // Data loaded - still refresh in background to get fresh data
-        console.log('Serving cached data while refreshing in background...');
-        setTimeout(() => {
-            refreshAllRegions();
-        }, 1000);
-    } else {
-        // No cache - refresh immediately
-        console.log('No disk cache found, computing fresh data...');
-        setTimeout(() => {
-            refreshAllRegions();
-        }, 2000);
+    // Wait for ClickHouse before running precomputation
+    const connected = await waitForClickHouse();
+    if (!connected) {
+        console.error('ClickHouse not available after retries — precomputation disabled until next scheduled refresh');
     }
 
-    // Schedule periodic refreshes
+    if (connected) {
+        if (loadedFromDisk) {
+            console.log('Serving cached data while refreshing in background...');
+        } else {
+            console.log('No disk cache found, computing fresh data...');
+        }
+        await refreshAllRegions();
+    }
+
+    // Schedule periodic refreshes (these will retry connection naturally)
     setInterval(() => {
         refreshAllRegions();
     }, PRECOMPUTE_INTERVAL);
@@ -2179,11 +2202,10 @@ const HOST = process.env.HOST || '0.0.0.0';
 const server = app.listen(PORT, HOST, async () => {
     console.log(`WeSense Respiro running at http://${HOST}:${PORT}`);
 
-    // Start background pre-computation of regional aggregates
-    startRegionRefreshLoop();
+    // Start background pre-computation (waits for ClickHouse connection internally)
+    await startRegionRefreshLoop();
 
     // Check for missing boundary data and auto-download if needed (runs in background)
-    // Delayed slightly to let ClickHouse connection establish
     setTimeout(checkAndDownloadBoundaryData, 3000);
 });
 
