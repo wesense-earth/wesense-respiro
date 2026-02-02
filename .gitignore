@@ -73,8 +73,12 @@ logs/
 *.tmp
 .cache/
 
-# Large/generated data files
-data/
+# Large/generated data files (keep scripts, exclude generated data)
+data/**
+!data/boundaries/
+data/boundaries/**
+!data/boundaries/process_cgaz.py
+!data/boundaries/merge_geojson.js
 *.tar
 public/regions.pmtiles
 public/regions.pmtiles-journal
