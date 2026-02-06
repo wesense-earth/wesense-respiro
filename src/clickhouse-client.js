@@ -6,7 +6,7 @@ class ClickHouseClient {
         this.connected = false;
     }
 
-    async connect() {
+    async connect({ quiet = false } = {}) {
         try {
             const host = process.env.CLICKHOUSE_HOST || 'localhost';
             const port = process.env.CLICKHOUSE_PORT || '8123';
@@ -31,7 +31,9 @@ class ClickHouseClient {
             return true;
 
         } catch (error) {
-            console.error('Failed to connect to ClickHouse:', error.message);
+            if (!quiet) {
+                console.error('Failed to connect to ClickHouse:', error.message);
+            }
             this.connected = false;
             return false;
         }

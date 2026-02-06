@@ -580,7 +580,7 @@ async function waitForClickHouse(maxRetries = 30, intervalMs = 2000) {
     for (let i = 0; i < maxRetries; i++) {
         if (clickHouseClient.connected) return true;
         // Try to connect (first attempt is already in-flight from startup)
-        if (i > 0) await clickHouseClient.connect();
+        if (i > 0) await clickHouseClient.connect({ quiet: true });
         if (clickHouseClient.connected) return true;
         console.log(`Waiting for ClickHouse connection... (${i + 1}/${maxRetries})`);
         await new Promise(r => setTimeout(r, intervalMs));
