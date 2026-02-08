@@ -4,6 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WeSense Respiro - Environmental Monitoring Network</title>
+    <link rel="icon" type="image/png" href="/logos/logo-solid-light.png" />
+    <meta name="theme-color" content="#2D6A4F" />
+
+    <!-- Google Fonts: DM Sans (headings), Inter (body), JetBrains Mono (data) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
 
     <!-- Apply dark mode immediately to prevent flash -->
     <script>
@@ -20,15 +27,16 @@
 
     <style>
         :root {
-            --bg-primary: #f5f5f5;
-            --bg-secondary: white;
-            --bg-tertiary: #f9f9f9;
-            --text-primary: #222;
-            --text-secondary: #555;
-            --text-muted: #777;
-            --border-color: #d0d0d0;
-            --accent-color: #667eea;
-            --accent-color-2: #764ba2;
+            /* WeSense Brand — Canopy Green palette */
+            --bg-primary: #FAFAF5;
+            --bg-secondary: #E8E4DD;
+            --bg-tertiary: #E8F5EE;
+            --text-primary: #1A1A18;
+            --text-secondary: #3D3D38;
+            --text-muted: #8D8478;
+            --border-color: #C7C1B7;
+            --accent-color: #2D6A4F;
+            --accent-color-2: #1B4332;
             /* Base font sizes for better readability */
             --font-xs: 12px;
             --font-sm: 13px;
@@ -39,15 +47,15 @@
 
         html.dark-mode,
         body.dark-mode {
-            --bg-primary: #1a1a1a;
-            --bg-secondary: #2d2d2d;
-            --bg-tertiary: #333;
-            --text-primary: #f0f0f0;
-            --text-secondary: #b0b0b0;
-            --text-muted: #888;
-            --border-color: #555;
-            --accent-color: #7b93f5;
-            --accent-color-2: #8b5fb8;
+            --bg-primary: #1A1A18;
+            --bg-secondary: #3D3D38;
+            --bg-tertiary: #3D3D38;
+            --text-primary: #E8E4DD;
+            --text-secondary: #C7C1B7;
+            --text-muted: #8D8478;
+            --border-color: #3D3D38;
+            --accent-color: #52B788;
+            --accent-color-2: #2D6A4F;
         }
         
         * {
@@ -56,8 +64,16 @@
             box-sizing: border-box;
         }
         
+        h1, h2, h3, h4, h5, h6 {
+            font-family: 'DM Sans', system-ui, sans-serif;
+        }
+
+        code, pre, .font-mono {
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
+        }
+
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
             background: var(--bg-primary);
             color: var(--text-primary);
             transition: background 0.3s, color 0.3s;
@@ -228,7 +244,7 @@
 
         .timeframe-btn.active {
             background: rgba(255, 255, 255, 0.8);
-            color: #667eea;
+            color: var(--accent-color);
             font-weight: bold;
         }
 
@@ -716,25 +732,25 @@
 
         /* Dark mode styles for popups on all map layers */
         body.dark-mode .leaflet-popup-content-wrapper {
-            background-color: #2d2d2d;
-            color: #e0e0e0;
+            background-color: #3D3D38;
+            color: #E8E4DD;
         }
 
         body.dark-mode .leaflet-popup-tip {
-            background-color: #2d2d2d;
+            background-color: #3D3D38;
         }
 
         body.dark-mode .info-window-title {
-            color: #e0e0e0;
+            color: #E8E4DD;
             border-bottom-color: #444;
         }
 
         body.dark-mode .info-window-content {
-            color: #e0e0e0;
+            color: #E8E4DD;
         }
 
         body.dark-mode .info-window-content p {
-            color: #e0e0e0;
+            color: #E8E4DD;
         }
 
         body.dark-mode .info-window-content strong {
@@ -742,7 +758,7 @@
         }
 
         body.dark-mode .leaflet-popup-close-button {
-            color: #e0e0e0 !important;
+            color: #E8E4DD !important;
         }
 
         body.dark-mode .leaflet-popup-close-button:hover {
@@ -751,8 +767,8 @@
 
         /* Dark mode styles for tooltips on all map layers */
         body.dark-mode .leaflet-tooltip {
-            background-color: #2d2d2d;
-            color: #e0e0e0;
+            background-color: #3D3D38;
+            color: #E8E4DD;
             border: 1px solid #444;
         }
 
@@ -760,16 +776,16 @@
         body.dark-mode .leaflet-tooltip-bottom:before,
         body.dark-mode .leaflet-tooltip-left:before,
         body.dark-mode .leaflet-tooltip-right:before {
-            border-top-color: #2d2d2d;
-            border-bottom-color: #2d2d2d;
-            border-left-color: #2d2d2d;
-            border-right-color: #2d2d2d;
+            border-top-color: #3D3D38;
+            border-bottom-color: #3D3D38;
+            border-left-color: #3D3D38;
+            border-right-color: #3D3D38;
         }
 
         /* Region overlay tooltip styles */
         .region-tooltip {
-            background-color: rgba(45, 45, 45, 0.95);
-            color: #e0e0e0;
+            background-color: rgba(61, 61, 56, 0.95);
+            color: #E8E4DD;
             border: 1px solid #555;
             border-radius: 6px;
             padding: 8px 12px;
@@ -795,18 +811,18 @@
 
         /* Dark mode styles for geocoder search control - JS will handle detailed styling */
         body.dark-mode .leaflet-control-geocoder-alternatives {
-            background-color: #2d2d2d;
-            border-color: #444;
+            background-color: #3D3D38;
+            border-color: #3D3D38;
         }
 
         body.dark-mode .leaflet-control-geocoder-alternatives a {
-            background-color: #2d2d2d;
-            color: #e0e0e0;
+            background-color: #3D3D38;
+            color: #E8E4DD;
             border-bottom-color: #444;
         }
 
         body.dark-mode .leaflet-control-geocoder-alternatives a:hover {
-            background-color: #3d3d3d;
+            background-color: #3D3D38;
         }
 
         /* Counter-invert geocoder on street layer to maintain dark appearance */
@@ -818,18 +834,18 @@
 
         /* Dark mode styles for zoom controls */
         body.dark-mode .leaflet-control-zoom a {
-            background-color: #2d2d2d;
-            color: #e0e0e0;
-            border-color: #444;
+            background-color: #3D3D38;
+            color: #E8E4DD;
+            border-color: #3D3D38;
         }
 
         body.dark-mode .leaflet-control-zoom a:hover {
-            background-color: #3d3d3d;
+            background-color: #3D3D38;
             color: #ffffff;
         }
 
         body.dark-mode .leaflet-bar {
-            border-color: #444;
+            border-color: #3D3D38;
         }
 
         /* Counter-invert zoom controls on street layer */
@@ -858,8 +874,8 @@
         }
 
         body.dark-mode .viewer-counter {
-            background: rgba(50, 50, 50, 0.9);
-            color: #aaa;
+            background: rgba(61, 61, 56, 0.9);
+            color: #C7C1B7;
         }
 
         body.dark-mode .viewer-counter #viewerCount {
@@ -920,23 +936,23 @@
         }
 
         body.dark-mode .map-overlay-controls {
-            background: rgba(45, 45, 45, 0.95);
-            border-color: #444;
+            background: rgba(61, 61, 56, 0.95);
+            border-color: #3D3D38;
         }
 
         body.dark-mode .map-overlay-controls select {
-            background: #3d3d3d;
-            border-color: #555;
-            color: #e0e0e0;
+            background: #3D3D38;
+            border-color: #3D3D38;
+            color: #E8E4DD;
         }
 
         body.dark-mode .map-overlay-controls select option {
-            background: #3d3d3d;
-            color: #e0e0e0;
+            background: #3D3D38;
+            color: #E8E4DD;
         }
 
         body.dark-mode .map-overlay-controls .control-label {
-            color: #aaa;
+            color: #C7C1B7;
         }
 
         /* Historical toggle checkbox */
@@ -949,8 +965,8 @@
             color: #666;
             padding: 4px 8px;
             border-radius: 4px;
-            background: #f5f5f5;
-            border: 1px solid #ddd;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
             margin-left: 4px;
         }
 
@@ -970,8 +986,8 @@
         }
 
         body.dark-mode .map-overlay-controls .historical-toggle {
-            background: #3d3d3d;
-            border-color: #555;
+            background: #3D3D38;
+            border-color: #3D3D38;
             color: #ccc;
         }
 
@@ -1019,9 +1035,9 @@
         }
 
         body.dark-mode .map-overlay-controls input[type="date"] {
-            background: #3d3d3d;
-            border-color: #555;
-            color: #e0e0e0;
+            background: #3D3D38;
+            border-color: #3D3D38;
+            color: #E8E4DD;
         }
 
         /* Hour slider container */
@@ -1072,7 +1088,7 @@
         }
 
         body.dark-mode .map-overlay-controls #regionHourLabel {
-            color: #aaa;
+            color: #C7C1B7;
         }
 
         /* Historical indicator badge */
@@ -1165,7 +1181,7 @@
         }
 
         .multi-select-option:hover {
-            background: #f5f5f5;
+            background: var(--bg-primary);
         }
 
         .multi-select-option input[type="checkbox"] {
@@ -1185,18 +1201,18 @@
         }
 
         body.dark-mode .multi-select-toggle {
-            background: #3d3d3d;
-            border-color: #555;
-            color: #e0e0e0;
+            background: #3D3D38;
+            border-color: #3D3D38;
+            color: #E8E4DD;
         }
 
         body.dark-mode .multi-select-options {
-            background: #3d3d3d;
-            border-color: #555;
+            background: #3D3D38;
+            border-color: #3D3D38;
         }
 
         body.dark-mode .multi-select-option {
-            color: #e0e0e0;
+            color: #E8E4DD;
         }
 
         body.dark-mode .multi-select-option:hover {
@@ -1218,23 +1234,23 @@
 
         /* Dark mode styles for layer control */
         body.dark-mode .leaflet-control-layers {
-            background-color: #2d2d2d;
-            border-color: #444;
+            background-color: #3D3D38;
+            border-color: #3D3D38;
         }
 
         body.dark-mode .leaflet-control-layers-toggle {
-            background-color: #2d2d2d;
+            background-color: #3D3D38;
             filter: invert(1);
         }
 
         body.dark-mode .leaflet-control-layers-expanded {
-            background-color: #2d2d2d;
-            color: #e0e0e0;
+            background-color: #3D3D38;
+            color: #E8E4DD;
         }
 
         body.dark-mode .leaflet-control-layers-base label,
         body.dark-mode .leaflet-control-layers-overlays label {
-            color: #e0e0e0;
+            color: #E8E4DD;
         }
 
         /* Counter-invert layer control on street layer */
@@ -1271,12 +1287,12 @@
         }
 
         .heatmap-toggle-control button.active {
-            background: #667eea;
+            background: var(--accent-color);
             color: white;
         }
 
         .heatmap-toggle-control button.active:hover {
-            background: #5a6fd6;
+            background: var(--accent-color-2);
         }
 
         .heatmap-toggle-control button svg {
@@ -1294,21 +1310,21 @@
         }
 
         body.dark-mode .heatmap-toggle-control {
-            background: #2d2d2d;
+            background: #3D3D38;
         }
 
         body.dark-mode .heatmap-toggle-control button {
-            background: #2d2d2d;
+            background: #3D3D38;
             color: #ccc;
         }
 
         body.dark-mode .heatmap-toggle-control button:hover {
-            background: #3d3d3d;
+            background: #3D3D38;
             color: #fff;
         }
 
         body.dark-mode .heatmap-toggle-control button.active {
-            background: #667eea;
+            background: var(--accent-color);
             color: white;
         }
 
@@ -1626,10 +1642,21 @@
             z-index: 1000;
         }
 
+        .nav-brand {
+            display: flex;
+            align-items: center;
+        }
+
+        .nav-brand img {
+            height: 28px;
+            width: auto;
+        }
+
         .nav-brand h1 {
+            font-family: 'DM Sans', system-ui, sans-serif;
             font-size: 20px;
             margin: 0;
-            font-weight: 600;
+            font-weight: 700;
         }
 
         .nav-tabs {
@@ -1643,8 +1670,9 @@
             border: none;
             color: rgba(255,255,255,0.8);
             padding: 8px 20px;
-            border-radius: 6px;
+            border-radius: 4px;
             cursor: pointer;
+            font-family: 'DM Sans', system-ui, sans-serif;
             font-size: 14px;
             font-weight: 500;
             transition: all 0.2s;
@@ -7300,7 +7328,7 @@
     <!-- Main Navigation -->
     <nav class="main-nav">
         <div class="nav-brand">
-            <h1>WeSense</h1>
+            <img src="/logos/logo-solid-dark.png" alt="WeSense.earth" />
         </div>
         <div class="nav-tabs">
             <button class="nav-tab active" data-view="dashboard">Dashboard</button>

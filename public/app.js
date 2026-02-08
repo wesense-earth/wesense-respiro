@@ -8611,7 +8611,7 @@ class Respiro {
                 return '#8e44ad';                    // Very unhealthy - purple
 
             default:
-                return '#667eea';
+                return '#3D7A7A';
         }
     }
 
@@ -10762,7 +10762,7 @@ class Respiro {
                 return '#3498db'; // Very high (very dry)
 
             default:
-                return '#667eea';
+                return '#3D7A7A';
         }
     }
 
@@ -10930,7 +10930,7 @@ class Respiro {
             'down': '#3498db',
             'flat': '#95a5a6'
         };
-        return colors[trend] || '#667eea';
+        return colors[trend] || '#3D7A7A';
     }
     
     getTimeAgo(timestamp) {
