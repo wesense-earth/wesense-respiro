@@ -51,10 +51,6 @@ npm-debug.log
 .env.local
 .env.*.local
 
-# Docker compose (contains environment-specific config)
-docker-compose.yml
-docker-compose.remote-host.yml
-
 # Build outputs
 build/
 dist/
