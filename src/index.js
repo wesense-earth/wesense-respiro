@@ -1588,26 +1588,20 @@ function generatePMTiles(pmtilesPath, boundariesDir, skipTippecanoe = false) {
         }
 
         // Check if pmtiles CLI is installed (needed for MBTiles → PMTiles conversion)
+        // The CLI is from protomaps/go-pmtiles (Go binary), not the npm pmtiles package
         let hasPmtiles = false;
         try {
             execSync('which pmtiles', { stdio: 'ignore' });
             hasPmtiles = true;
         } catch (e) {
-            // Try to install pmtiles via npm (works cross-platform)
-            console.log('pmtiles CLI not found, attempting to install via npm...');
-            try {
-                execSync('npm install -g pmtiles', { stdio: 'inherit' });
-                hasPmtiles = true;
-                console.log('✓ pmtiles CLI installed successfully');
-            } catch (installErr) {
-                console.log('\n' + '='.repeat(60));
-                console.log('pmtiles CLI not installed - needed to convert MBTiles to PMTiles');
-                console.log('Install with:');
-                console.log('  npm install -g pmtiles');
-                console.log('  or: brew install pmtiles');
-                console.log('='.repeat(60) + '\n');
-                return resolve(false);
-            }
+            console.log('\n' + '='.repeat(60));
+            console.log('pmtiles CLI not installed - needed to convert MBTiles to PMTiles');
+            console.log('Install with:');
+            console.log('  macOS:  brew install pmtiles');
+            console.log('  Linux:  Download from https://github.com/protomaps/go-pmtiles/releases');
+            console.log('  Docker: Already included in the official Respiro image');
+            console.log('='.repeat(60) + '\n');
+            return resolve(false);
         }
 
         // Build layer args for available files with per-layer zoom ranges
@@ -1977,9 +1971,25 @@ async function exportBoundariesFromClickHouse(boundariesDir) {
 async function checkAndDownloadBoundaryData() {
     const { spawn, execSync } = require('child_process');
 
-    // First check if PMTiles exists
+    // PMTiles is served from public/ but cached in data/ (volume-mounted, persists across restarts)
     const pmtilesPath = path.join(__dirname, '../public/regions.pmtiles');
     const boundariesDir = path.join(__dirname, '../data/boundaries');
+    const pmtilesCachePath = path.join(boundariesDir, 'regions.pmtiles');
+
+    // Ensure boundaries directory exists
+    if (!fs.existsSync(boundariesDir)) {
+        fs.mkdirSync(boundariesDir, { recursive: true });
+    }
+
+    // If PMTiles is missing from public/ but exists in the persistent data volume, restore it
+    if (!fs.existsSync(pmtilesPath) && fs.existsSync(pmtilesCachePath)) {
+        const cacheValidation = isValidPMTiles(pmtilesCachePath);
+        if (cacheValidation.valid) {
+            console.log(`Restoring PMTiles from cache (${cacheValidation.sizeMB.toFixed(1)}MB)...`);
+            fs.copyFileSync(pmtilesCachePath, pmtilesPath);
+            console.log('PMTiles restored from persistent cache');
+        }
+    }
 
     // Check if processed files exist (need at least ADM0-2 for basic functionality)
     const hasProcessedFiles = [0, 1, 2].every(level =>
@@ -2088,7 +2098,16 @@ async function checkAndDownloadBoundaryData() {
                 }
             }
 
-            await generatePMTiles(pmtilesPath, boundariesDir, skipTippecanoe);
+            const generated = await generatePMTiles(pmtilesPath, boundariesDir, skipTippecanoe);
+            // Cache the generated PMTiles in the persistent data volume
+            if (generated && fs.existsSync(pmtilesPath)) {
+                try {
+                    fs.copyFileSync(pmtilesPath, pmtilesCachePath);
+                    console.log('PMTiles cached to persistent data volume');
+                } catch (e) {
+                    console.log('Warning: could not cache PMTiles to data volume:', e.message);
+                }
+            }
         } else {
             console.log('No processed boundary files found - heatmap overlay disabled');
             console.log('Run: npm run setup-boundaries');
