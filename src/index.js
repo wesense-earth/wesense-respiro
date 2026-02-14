@@ -1476,6 +1476,41 @@ app.get('/api/comparison', async (req, res) => {
 });
 
 
+// =============================================================================
+// P2P Proxy Endpoints (optional — gated on ZENOH_API_URL env var)
+// Proxies requests to the zenoh-api service for distributed Zenoh queries.
+// If ZENOH_API_URL is not set, these endpoints are not registered.
+// =============================================================================
+const ZENOH_API_URL = process.env.ZENOH_API_URL;
+
+if (ZENOH_API_URL) {
+    console.log(`P2P proxy enabled → ${ZENOH_API_URL}`);
+
+    const proxyToZenohApi = (endpoint) => async (req, res) => {
+        try {
+            const url = new URL(endpoint, ZENOH_API_URL);
+            // Forward query parameters
+            for (const [key, value] of Object.entries(req.query)) {
+                url.searchParams.set(key, value);
+            }
+            const response = await fetch(url.toString(), {
+                signal: AbortSignal.timeout(10000),
+            });
+            const data = await response.json();
+            res.status(response.status).json(data);
+        } catch (error) {
+            console.error(`P2P proxy error (${endpoint}):`, error.message);
+            res.status(502).json({ error: 'Zenoh API unavailable' });
+        }
+    };
+
+    app.get('/api/p2p/summary', proxyToZenohApi('/api/p2p/summary'));
+    app.get('/api/p2p/latest', proxyToZenohApi('/api/p2p/latest'));
+    app.get('/api/p2p/history', proxyToZenohApi('/api/p2p/history'));
+    app.get('/api/p2p/devices', proxyToZenohApi('/api/p2p/devices'));
+}
+
+
 /**
  * Check if a file is valid PMTiles format (not MBTiles/SQLite)
  * PMTiles files start with "PMTiles" magic bytes, MBTiles start with "SQLite"
