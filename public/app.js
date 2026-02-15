@@ -11063,7 +11063,7 @@ class Respiro {
         if (zenoh && zenoh.status === 'not_configured') {
             this.setHealthIndicator('healthZenoh', 'unknown');
         } else if (zenoh && zenoh.status) {
-            this.setHealthIndicator('healthZenoh', zenoh.status === 'ok' || zenoh.connected ? 'healthy' : 'degraded');
+            this.setHealthIndicator('healthZenoh', zenoh.status === 'healthy' || zenoh.zenoh_connected ? 'healthy' : 'degraded');
         } else {
             this.setHealthIndicator('healthZenoh', 'offline');
         }
