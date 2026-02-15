@@ -10961,13 +10961,14 @@ class Respiro {
         if (refreshBtn) refreshBtn.classList.add('loading');
 
         try {
-            const [overview, orbitdb, zenoh, nodes, trust, contribution] = await Promise.allSettled([
+            const [overview, orbitdb, zenoh, nodes, trust, contribution, containers] = await Promise.allSettled([
                 fetch('/api/stats/overview').then(r => r.json()),
                 fetch('/api/stats/orbitdb').then(r => r.json()),
                 fetch('/api/stats/zenoh').then(r => r.json()),
                 fetch('/api/stats/nodes').then(r => r.json()),
                 fetch('/api/stats/trust').then(r => r.json()),
                 fetch('/api/stats/contribution').then(r => r.json()),
+                fetch('/api/stats/containers').then(r => r.json()),
             ]);
 
             const ov = overview.status === 'fulfilled' ? overview.value : {};
@@ -10976,9 +10977,11 @@ class Respiro {
             const no = nodes.status === 'fulfilled' ? nodes.value : {};
             const tr = trust.status === 'fulfilled' ? trust.value : {};
             const co = contribution.status === 'fulfilled' ? contribution.value : {};
+            const ct = containers.status === 'fulfilled' ? containers.value : {};
 
             this.renderUserStats(ov, ob, ze);
             this.renderContribution(co, no);
+            this.renderContainerStats(ct);
             this.renderDebugStats(ob, ze, no, tr, ov);
         } catch (err) {
             console.error('Failed to load stats:', err);
@@ -11178,6 +11181,62 @@ class Respiro {
                 </div>
             `;
         }
+    }
+
+    renderContainerStats(data) {
+        const el = document.getElementById('statsContainers');
+        if (!data || data.enabled === false) {
+            el.innerHTML = `<div class="stats-disabled-note">
+                Container resource stats are disabled. To enable, set <code>DOCKER_STATS_ENABLED=true</code> in your <code>.env</code> and uncomment the Docker socket volume mount in <code>docker-compose.yml</code>.
+            </div>`;
+            return;
+        }
+        if (data.error) {
+            el.innerHTML = `<div class="stats-empty">${this.statsEscapeHtml(data.error)}</div>`;
+            return;
+        }
+        if (!data.containers || data.containers.length === 0) {
+            el.innerHTML = '<div class="stats-empty">No containers found</div>';
+            return;
+        }
+
+        el.innerHTML = `
+            <table class="stats-container-table">
+                <thead>
+                    <tr>
+                        <th>Container</th>
+                        <th>CPU</th>
+                        <th>Memory</th>
+                        <th>Net I/O</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${data.containers.map(c => {
+                        if (c.error) {
+                            return `<tr><td class="container-name">${this.statsEscapeHtml(c.name)}</td><td colspan="4" class="stats-empty">${this.statsEscapeHtml(c.error)}</td></tr>`;
+                        }
+                        return `<tr>
+                            <td class="container-name">${this.statsEscapeHtml(c.name)}</td>
+                            <td class="mono">${c.cpu_percent.toFixed(1)}%</td>
+                            <td class="mono">${this.formatBytes(c.memory_used)} / ${this.formatBytes(c.memory_limit)}</td>
+                            <td class="mono">${this.formatBytes(c.net_rx)} / ${this.formatBytes(c.net_tx)}</td>
+                            <td>${this.statsEscapeHtml(c.status)}</td>
+                        </tr>`;
+                    }).join('')}
+                </tbody>
+            </table>
+        `;
+    }
+
+    formatBytes(bytes) {
+        if (bytes == null || isNaN(bytes)) return '0 B';
+        bytes = Number(bytes);
+        if (bytes === 0) return '0 B';
+        const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(1024));
+        const val = bytes / Math.pow(1024, i);
+        return `${val < 10 ? val.toFixed(1) : Math.round(val)} ${units[i]}`;
     }
 
     renderDebugStats(orbitdb, zenoh, nodes, trust, overview) {
