@@ -6981,6 +6981,7 @@ class Respiro {
         this.setupDashboardTabs();
         this.setupTrendTimeframeSelector();
         this.setupRegionView();
+        this.setupStats();
         this.setupViewerTracking();
         this.setupDetailsSidebar();  // Initialize details sidebar
         this.setupDashboardTimeRange();  // Dashboard time range selector
@@ -10933,6 +10934,314 @@ class Respiro {
         return colors[trend] || '#3D7A7A';
     }
     
+    // =========================================================================
+    // Stats Tab
+    // =========================================================================
+
+    setupStats() {
+        // Debug toggle
+        const toggle = document.getElementById('statsDebugToggle');
+        const section = document.getElementById('statsDebugSection');
+        if (toggle && section) {
+            toggle.addEventListener('click', () => {
+                toggle.classList.toggle('expanded');
+                section.classList.toggle('expanded');
+            });
+        }
+
+        // Refresh button
+        const refreshBtn = document.getElementById('statsRefreshBtn');
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', () => this.loadStats());
+        }
+    }
+
+    async loadStats() {
+        const refreshBtn = document.getElementById('statsRefreshBtn');
+        if (refreshBtn) refreshBtn.classList.add('loading');
+
+        try {
+            const [overview, orbitdb, zenoh, nodes, trust] = await Promise.allSettled([
+                fetch('/api/stats/overview').then(r => r.json()),
+                fetch('/api/stats/orbitdb').then(r => r.json()),
+                fetch('/api/stats/zenoh').then(r => r.json()),
+                fetch('/api/stats/nodes').then(r => r.json()),
+                fetch('/api/stats/trust').then(r => r.json()),
+            ]);
+
+            const ov = overview.status === 'fulfilled' ? overview.value : {};
+            const ob = orbitdb.status === 'fulfilled' ? orbitdb.value : {};
+            const ze = zenoh.status === 'fulfilled' ? zenoh.value : {};
+            const no = nodes.status === 'fulfilled' ? nodes.value : {};
+            const tr = trust.status === 'fulfilled' ? trust.value : {};
+
+            this.renderUserStats(ov, ob, ze);
+            this.renderDebugStats(ob, ze, no, tr, ov);
+        } catch (err) {
+            console.error('Failed to load stats:', err);
+        } finally {
+            if (refreshBtn) refreshBtn.classList.remove('loading');
+        }
+    }
+
+    renderUserStats(overview, orbitdb, zenoh) {
+        // Hero: P2P Peers
+        const peersEl = document.getElementById('statsPeers');
+        const peersSubEl = document.getElementById('statsPeersSub');
+        if (orbitdb && orbitdb.peer_id) {
+            const peerCount = orbitdb.connected_peers?.length || 0;
+            peersEl.textContent = peerCount;
+            peersSubEl.textContent = 'connected';
+        } else {
+            peersEl.textContent = '--';
+            peersSubEl.textContent = 'offline';
+        }
+
+        // Hero: Devices Online
+        const devicesEl = document.getElementById('statsDevices');
+        const devicesSubEl = document.getElementById('statsDevicesSub');
+        if (overview.active_devices_24h != null) {
+            devicesEl.textContent = this.formatLargeNumber(overview.active_devices_24h);
+            devicesSubEl.textContent = `${overview.active_devices_1h || 0} in last hour`;
+        }
+
+        // Hero: Readings/min
+        const rateEl = document.getElementById('statsRate');
+        const rateSubEl = document.getElementById('statsRateSub');
+        if (overview.readings_per_minute != null) {
+            rateEl.textContent = overview.readings_per_minute;
+            rateSubEl.textContent = `${this.formatLargeNumber(overview.readings_last_24h || 0)} in 24h`;
+        }
+
+        // Hero: Coverage
+        const coverageEl = document.getElementById('statsCoverage');
+        const coverageSubEl = document.getElementById('statsCoverageSub');
+        if (overview.coverage) {
+            coverageEl.textContent = `${overview.coverage.countries}/${overview.coverage.regions}`;
+            coverageSubEl.textContent = 'countries / regions';
+        }
+
+        // Data Sources
+        const sourcesEl = document.getElementById('statsDataSources');
+        if (overview.data_sources && Object.keys(overview.data_sources).length > 0) {
+            const sourceNames = {
+                'WESENSE': 'WeSense WiFi',
+                'MESHTASTIC_PUBLIC': 'Meshtastic Public',
+                'MESHTASTIC_COMMUNITY': 'Meshtastic Community',
+                'HOME_ASSISTANT': 'Home Assistant',
+                'TTN': 'TTN LoRaWAN'
+            };
+            const sourceDotClass = {
+                'WESENSE': 'wesense',
+                'MESHTASTIC_PUBLIC': 'meshtastic-public',
+                'MESHTASTIC_COMMUNITY': 'meshtastic-community',
+                'HOME_ASSISTANT': 'homeassistant',
+                'TTN': 'ttn'
+            };
+            sourcesEl.innerHTML = Object.entries(overview.data_sources)
+                .map(([key, count]) => `
+                    <div class="stats-source-row">
+                        <span class="stats-source-name">
+                            <span class="source-dot ${sourceDotClass[key] || 'default'}"></span>
+                            ${sourceNames[key] || key}
+                        </span>
+                        <span class="stats-source-count">${count}</span>
+                    </div>
+                `).join('');
+        } else {
+            sourcesEl.innerHTML = '<div class="stats-empty">No data</div>';
+        }
+
+        // Health indicators
+        this.setHealthIndicator('healthClickhouse', overview.clickhouse_connected ? 'healthy' : 'offline');
+
+        if (zenoh && zenoh.status === 'not_configured') {
+            this.setHealthIndicator('healthZenoh', 'unknown');
+        } else if (zenoh && zenoh.status) {
+            this.setHealthIndicator('healthZenoh', zenoh.status === 'ok' || zenoh.connected ? 'healthy' : 'degraded');
+        } else {
+            this.setHealthIndicator('healthZenoh', 'offline');
+        }
+
+        if (orbitdb && orbitdb.status === 'not_configured') {
+            this.setHealthIndicator('healthOrbitdb', 'unknown');
+        } else if (orbitdb && orbitdb.peer_id) {
+            this.setHealthIndicator('healthOrbitdb', 'healthy');
+        } else {
+            this.setHealthIndicator('healthOrbitdb', 'offline');
+        }
+
+        // MQTT — infer from whether we have real-time data (readings in last hour)
+        if (overview.active_devices_1h > 0) {
+            this.setHealthIndicator('healthMqtt', 'healthy');
+        } else if (overview.active_devices_24h > 0) {
+            this.setHealthIndicator('healthMqtt', 'degraded');
+        } else {
+            this.setHealthIndicator('healthMqtt', 'unknown');
+        }
+
+        // Coverage Details
+        const coverageDetailsEl = document.getElementById('statsCoverageDetails');
+        if (overview.coverage) {
+            coverageDetailsEl.innerHTML = `
+                <div class="stats-detail-row">
+                    <span class="stats-detail-label">Countries</span>
+                    <span class="stats-detail-value">${overview.coverage.countries}</span>
+                </div>
+                <div class="stats-detail-row">
+                    <span class="stats-detail-label">Regions</span>
+                    <span class="stats-detail-value">${overview.coverage.regions}</span>
+                </div>
+                <div class="stats-detail-row">
+                    <span class="stats-detail-label">Sensor Types</span>
+                    <span class="stats-detail-value">${overview.reading_types_active || '--'}</span>
+                </div>
+                <div class="stats-detail-row">
+                    <span class="stats-detail-label">Total Readings</span>
+                    <span class="stats-detail-value">${this.formatLargeNumber(overview.total_readings_all_time || 0)}</span>
+                </div>
+                <div class="stats-detail-row">
+                    <span class="stats-detail-label">Latest Reading</span>
+                    <span class="stats-detail-value">${overview.latest_reading ? this.getTimeAgo(overview.latest_reading) : '--'}</span>
+                </div>
+            `;
+        }
+
+        // Live
+        const liveEl = document.getElementById('statsLive');
+        liveEl.innerHTML = `
+            <div class="stats-detail-row">
+                <span class="stats-detail-label">Map Viewers</span>
+                <span class="stats-detail-value">${overview.active_viewers != null ? overview.active_viewers : '--'}</span>
+            </div>
+            <div class="stats-detail-row">
+                <span class="stats-detail-label">Active Devices (1h)</span>
+                <span class="stats-detail-value">${overview.active_devices_1h != null ? overview.active_devices_1h : '--'}</span>
+            </div>
+            <div class="stats-detail-row">
+                <span class="stats-detail-label">Total Devices</span>
+                <span class="stats-detail-value">${overview.total_devices != null ? this.formatLargeNumber(overview.total_devices) : '--'}</span>
+            </div>
+        `;
+    }
+
+    renderDebugStats(orbitdb, zenoh, nodes, trust, overview) {
+        // P2P Network
+        const p2pEl = document.getElementById('debugP2P');
+        if (orbitdb && orbitdb.peer_id) {
+            const peers = orbitdb.connected_peers || [];
+            const addrs = orbitdb.listen_addresses || [];
+            p2pEl.innerHTML = `
+                <div class="stats-mono-row stats-mono">Peer ID: ${this.statsEscapeHtml(orbitdb.peer_id)}</div>
+                <div class="stats-mono-row stats-mono">Listen: ${addrs.length > 0 ? addrs.map(a => this.statsEscapeHtml(a)).join('<br>') : 'none'}</div>
+                <div class="stats-mono-row stats-mono">Connected Peers: ${peers.length}${peers.length > 0 ? '<br>' + peers.map(p => this.statsEscapeHtml(p)).join('<br>') : ''}</div>
+            `;
+        } else {
+            p2pEl.innerHTML = '<div class="stats-empty">OrbitDB not connected</div>';
+        }
+
+        // OrbitDB Databases
+        const dbEl = document.getElementById('debugOrbitDBDatabases');
+        if (orbitdb && orbitdb.databases) {
+            const dbs = Array.isArray(orbitdb.databases) ? orbitdb.databases : Object.entries(orbitdb.databases);
+            if (dbs.length > 0) {
+                dbEl.innerHTML = dbs.map(db => {
+                    if (Array.isArray(db)) {
+                        return `<div class="stats-mono-row stats-mono">${this.statsEscapeHtml(db[0])}: ${db[1]} docs</div>`;
+                    }
+                    return `<div class="stats-mono-row stats-mono">${this.statsEscapeHtml(db.address || db.name || 'unknown')}: ${db.count ?? db.doc_count ?? '?'} docs</div>`;
+                }).join('');
+            } else {
+                dbEl.innerHTML = '<div class="stats-empty">No databases</div>';
+            }
+        } else {
+            dbEl.innerHTML = '<div class="stats-empty">OrbitDB not connected</div>';
+        }
+
+        // Gossipsub Topics
+        const gossipEl = document.getElementById('debugGossipsub');
+        if (orbitdb && orbitdb.gossipsub_topics) {
+            const topics = Array.isArray(orbitdb.gossipsub_topics) ? orbitdb.gossipsub_topics : Object.entries(orbitdb.gossipsub_topics);
+            if (topics.length > 0) {
+                gossipEl.innerHTML = topics.map(t => {
+                    if (Array.isArray(t)) {
+                        return `<div class="stats-mono-row stats-mono">${this.statsEscapeHtml(t[0])}: ${t[1]} subscribers</div>`;
+                    }
+                    return `<div class="stats-mono-row stats-mono">${this.statsEscapeHtml(t.topic || t.name || 'unknown')}: ${t.subscribers ?? t.peers ?? '?'} subscribers</div>`;
+                }).join('');
+            } else {
+                gossipEl.innerHTML = '<div class="stats-empty">No topics</div>';
+            }
+        } else {
+            gossipEl.innerHTML = '<div class="stats-empty">OrbitDB not connected</div>';
+        }
+
+        // Trust List
+        const trustEl = document.getElementById('debugTrust');
+        const trustList = trust?.trust || trust?.ingesters || [];
+        if (trustList.length > 0) {
+            trustEl.innerHTML = trustList.map(entry => {
+                const id = entry.ingester_id || entry.id || 'unknown';
+                const status = entry.revoked ? 'revoked' : 'active';
+                return `<div class="stats-mono-row stats-mono"><span class="stats-trust-status ${status}"></span>${this.statsEscapeHtml(id)}</div>`;
+            }).join('');
+        } else {
+            trustEl.innerHTML = '<div class="stats-empty">No trust entries</div>';
+        }
+
+        // Registered Nodes
+        const nodesEl = document.getElementById('debugNodes');
+        const nodeList = nodes?.nodes || [];
+        if (nodeList.length > 0) {
+            nodesEl.innerHTML = nodeList.map(node => {
+                const id = node.ingester_id || node.id || 'unknown';
+                const region = node.region || '';
+                return `<div class="stats-mono-row stats-mono">${this.statsEscapeHtml(id)}${region ? ' <span style="color:var(--text-muted)">(' + this.statsEscapeHtml(region) + ')</span>' : ''}</div>`;
+            }).join('');
+        } else {
+            nodesEl.innerHTML = '<div class="stats-empty">No registered nodes</div>';
+        }
+
+        // Background Tasks
+        const tasksEl = document.getElementById('debugTasks');
+        if (overview.precompute_status) {
+            const ps = overview.precompute_status;
+            tasksEl.innerHTML = `
+                <div class="stats-detail-row">
+                    <span class="stats-detail-label">Last Region Refresh</span>
+                    <span class="stats-detail-value">${ps.last_refresh ? this.getTimeAgo(ps.last_refresh) : 'never'}</span>
+                </div>
+                <div class="stats-detail-row">
+                    <span class="stats-detail-label">Refresh In Progress</span>
+                    <span class="stats-detail-value">${ps.refresh_in_progress ? 'Yes' : 'No'}</span>
+                </div>
+            `;
+        } else {
+            tasksEl.innerHTML = '<div class="stats-empty">No data</div>';
+        }
+    }
+
+    setHealthIndicator(elementId, status) {
+        const el = document.getElementById(elementId);
+        if (!el) return;
+        el.className = `health-dot ${status}`;
+    }
+
+    formatLargeNumber(num) {
+        if (num == null || isNaN(num)) return '0';
+        num = Number(num);
+        if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+        if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+        return String(num);
+    }
+
+    statsEscapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = String(text);
+        return div.innerHTML;
+    }
+
     getTimeAgo(timestamp) {
         const now = new Date();
         const then = new Date(timestamp);
@@ -11073,13 +11382,19 @@ class Respiro {
         const mapView = document.getElementById('mapView');
         const dashboardView = document.getElementById('dashboardView');
 
+        // Clear stats auto-refresh when leaving stats view
+        if (this._statsInterval) {
+            clearInterval(this._statsInterval);
+            this._statsInterval = null;
+        }
+
         if (view === 'map') {
             mapView.classList.add('active');
             dashboardView.classList.remove('active');
             // Invalidate map size when switching back to ensure proper display
             setTimeout(() => this.map.invalidateSize(), 100);
         } else {
-            // Dashboard views: dashboard, regional
+            // Dashboard views: dashboard, stats
             mapView.classList.remove('active');
             dashboardView.classList.add('active');
 
@@ -11088,8 +11403,11 @@ class Respiro {
             if (view === 'dashboard') {
                 document.getElementById('mySensorsView').classList.add('active');
                 this.renderMySensors();
-            } else if (view === 'regional') {
-                document.getElementById('regionalView').classList.add('active');
+            } else if (view === 'stats') {
+                document.getElementById('statsView').classList.add('active');
+                this.loadStats();
+                // Auto-refresh every 30 seconds while stats tab is active
+                this._statsInterval = setInterval(() => this.loadStats(), 30000);
             }
         }
     }

@@ -1477,6 +1477,82 @@ app.get('/api/comparison', async (req, res) => {
 
 
 // =============================================================================
+// Stats Endpoints
+// =============================================================================
+
+// Aggregated network overview (ClickHouse stats + in-memory state)
+app.get('/api/stats/overview', async (req, res) => {
+    try {
+        const stats = await clickHouseClient.queryNetworkStats();
+        res.json({
+            ...(stats || {}),
+            clickhouse_connected: clickHouseClient.isConnected(),
+            active_viewers: activeViewers.size,
+            precompute_status: {
+                last_refresh: lastRefreshTime ? new Date(lastRefreshTime).toISOString() : null,
+                refresh_in_progress: refreshInProgress
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching stats overview:', error);
+        res.status(500).json({ error: 'Failed to fetch stats overview' });
+    }
+});
+
+// OrbitDB proxy endpoints (gated on ORBITDB_URL env var)
+const ORBITDB_URL = process.env.ORBITDB_URL;
+
+if (ORBITDB_URL) {
+    console.log(`OrbitDB proxy enabled → ${ORBITDB_URL}`);
+
+    const proxyToOrbitDB = (endpoint) => async (req, res) => {
+        try {
+            const url = new URL(endpoint, ORBITDB_URL);
+            for (const [key, value] of Object.entries(req.query)) {
+                url.searchParams.set(key, value);
+            }
+            const response = await fetch(url.toString(), {
+                signal: AbortSignal.timeout(10000),
+            });
+            const data = await response.json();
+            res.status(response.status).json(data);
+        } catch (error) {
+            console.error(`OrbitDB proxy error (${endpoint}):`, error.message);
+            res.status(502).json({ error: 'OrbitDB unavailable' });
+        }
+    };
+
+    app.get('/api/stats/orbitdb', proxyToOrbitDB('/health'));
+    app.get('/api/stats/nodes', proxyToOrbitDB('/nodes'));
+    app.get('/api/stats/trust', proxyToOrbitDB('/trust'));
+} else {
+    // Return offline status when OrbitDB is not configured
+    app.get('/api/stats/orbitdb', (req, res) => res.json({ status: 'not_configured' }));
+    app.get('/api/stats/nodes', (req, res) => res.json({ nodes: [] }));
+    app.get('/api/stats/trust', (req, res) => res.json({ trust: [] }));
+}
+
+// Zenoh health proxy for stats
+app.get('/api/stats/zenoh', async (req, res) => {
+    const zenohUrl = process.env.ZENOH_API_URL;
+    if (!zenohUrl) {
+        return res.json({ status: 'not_configured' });
+    }
+    try {
+        const url = new URL('/health', zenohUrl);
+        const response = await fetch(url.toString(), {
+            signal: AbortSignal.timeout(10000),
+        });
+        const data = await response.json();
+        res.status(response.status).json(data);
+    } catch (error) {
+        console.error('Zenoh health proxy error:', error.message);
+        res.status(502).json({ error: 'Zenoh unavailable' });
+    }
+});
+
+
+// =============================================================================
 // P2P Proxy Endpoints (optional — gated on ZENOH_API_URL env var)
 // Proxies requests to the zenoh-api service for distributed Zenoh queries.
 // If ZENOH_API_URL is not set, these endpoints are not registered.
