@@ -1532,6 +1532,17 @@ if (ORBITDB_URL) {
     app.get('/api/stats/trust', (req, res) => res.json({ trust: [] }));
 }
 
+// Contribution breakdown (local vs P2P, by data source)
+app.get('/api/stats/contribution', async (req, res) => {
+    try {
+        const contribution = await clickHouseClient.queryContribution();
+        res.json(contribution || { local: {}, p2p: {} });
+    } catch (error) {
+        console.error('Error fetching contribution data:', error);
+        res.status(500).json({ error: 'Failed to fetch contribution data' });
+    }
+});
+
 // Zenoh health proxy for stats
 app.get('/api/stats/zenoh', async (req, res) => {
     const zenohUrl = process.env.ZENOH_API_URL;

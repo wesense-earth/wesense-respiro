@@ -10961,12 +10961,13 @@ class Respiro {
         if (refreshBtn) refreshBtn.classList.add('loading');
 
         try {
-            const [overview, orbitdb, zenoh, nodes, trust] = await Promise.allSettled([
+            const [overview, orbitdb, zenoh, nodes, trust, contribution] = await Promise.allSettled([
                 fetch('/api/stats/overview').then(r => r.json()),
                 fetch('/api/stats/orbitdb').then(r => r.json()),
                 fetch('/api/stats/zenoh').then(r => r.json()),
                 fetch('/api/stats/nodes').then(r => r.json()),
                 fetch('/api/stats/trust').then(r => r.json()),
+                fetch('/api/stats/contribution').then(r => r.json()),
             ]);
 
             const ov = overview.status === 'fulfilled' ? overview.value : {};
@@ -10974,8 +10975,10 @@ class Respiro {
             const ze = zenoh.status === 'fulfilled' ? zenoh.value : {};
             const no = nodes.status === 'fulfilled' ? nodes.value : {};
             const tr = trust.status === 'fulfilled' ? trust.value : {};
+            const co = contribution.status === 'fulfilled' ? contribution.value : {};
 
             this.renderUserStats(ov, ob, ze);
+            this.renderContribution(co, no);
             this.renderDebugStats(ob, ze, no, tr, ov);
         } catch (err) {
             console.error('Failed to load stats:', err);
@@ -11028,16 +11031,16 @@ class Respiro {
         if (overview.data_sources && Object.keys(overview.data_sources).length > 0) {
             const sourceNames = {
                 'WESENSE': 'WeSense WiFi',
-                'MESHTASTIC_PUBLIC': 'Meshtastic Public',
+                'MESHTASTIC_DOWNLINK': 'Meshtastic Downlink',
                 'MESHTASTIC_COMMUNITY': 'Meshtastic Community',
-                'HOME_ASSISTANT': 'Home Assistant',
+                'HOMEASSISTANT': 'Home Assistant',
                 'TTN': 'TTN LoRaWAN'
             };
             const sourceDotClass = {
                 'WESENSE': 'wesense',
-                'MESHTASTIC_PUBLIC': 'meshtastic-public',
+                'MESHTASTIC_DOWNLINK': 'meshtastic-public',
                 'MESHTASTIC_COMMUNITY': 'meshtastic-community',
-                'HOME_ASSISTANT': 'homeassistant',
+                'HOMEASSISTANT': 'homeassistant',
                 'TTN': 'ttn'
             };
             sourcesEl.innerHTML = Object.entries(overview.data_sources)
@@ -11125,6 +11128,63 @@ class Respiro {
                 <span class="stats-detail-value">${overview.total_devices != null ? this.formatLargeNumber(overview.total_devices) : '--'}</span>
             </div>
         `;
+    }
+
+    renderContribution(contribution, nodes) {
+        const sourceNames = {
+            'WESENSE': 'WeSense WiFi',
+            'MESHTASTIC_DOWNLINK': 'Meshtastic Downlink',
+            'MESHTASTIC_COMMUNITY': 'Meshtastic Community',
+            'HOMEASSISTANT': 'Home Assistant',
+            'TTN': 'TTN LoRaWAN'
+        };
+        const sourceDotClass = {
+            'WESENSE': 'wesense',
+            'MESHTASTIC_DOWNLINK': 'meshtastic-public',
+            'MESHTASTIC_COMMUNITY': 'meshtastic-community',
+            'HOMEASSISTANT': 'homeassistant',
+            'TTN': 'ttn'
+        };
+
+        const renderSourceRows = (sources) => {
+            if (!sources || Object.keys(sources).length === 0) return '';
+            return Object.entries(sources).map(([key, data]) => `
+                <div class="stats-source-row">
+                    <span class="stats-source-name">
+                        <span class="source-dot ${sourceDotClass[key] || 'default'}"></span>
+                        ${sourceNames[key] || key}
+                    </span>
+                    <span class="stats-source-count">${data.devices} <span style="color:var(--text-muted);font-weight:400;font-size:12px">devices</span></span>
+                </div>
+            `).join('');
+        };
+
+        // My Contribution
+        const myEl = document.getElementById('statsMyContribution');
+        const localSources = contribution?.local || {};
+        if (Object.keys(localSources).length > 0) {
+            myEl.innerHTML = renderSourceRows(localSources);
+        } else {
+            myEl.innerHTML = '<div class="stats-empty">No local data in last 24h</div>';
+        }
+
+        // P2P Network
+        const p2pEl = document.getElementById('statsP2PContribution');
+        const p2pSources = contribution?.p2p || {};
+        const nodeCount = nodes?.nodes?.length || 0;
+        if (Object.keys(p2pSources).length > 0) {
+            p2pEl.innerHTML = renderSourceRows(p2pSources);
+        } else {
+            p2pEl.innerHTML = `<div class="stats-empty">No P2P data yet</div>`;
+        }
+        if (nodeCount > 0) {
+            p2pEl.innerHTML += `
+                <div class="stats-detail-row" style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(128,128,128,0.1)">
+                    <span class="stats-detail-label">Registered Nodes</span>
+                    <span class="stats-detail-value">${nodeCount}</span>
+                </div>
+            `;
+        }
     }
 
     renderDebugStats(orbitdb, zenoh, nodes, trust, overview) {
