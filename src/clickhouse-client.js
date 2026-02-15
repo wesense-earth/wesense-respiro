@@ -1178,6 +1178,48 @@ class ClickHouseClient {
         }
     }
 
+    /**
+     * Query contribution breakdown: local ingesters vs P2P data
+     * Groups by received_via and data_source
+     */
+    async queryContribution() {
+        if (!this.connected || !this.client) {
+            return null;
+        }
+
+        try {
+            const query = `
+                SELECT
+                    received_via,
+                    data_source,
+                    uniqExact(device_id) as device_count,
+                    count() as reading_count
+                FROM sensor_readings
+                WHERE timestamp > now() - INTERVAL 24 HOUR
+                GROUP BY received_via, data_source
+                ORDER BY received_via, device_count DESC
+            `;
+
+            const result = await this.client.query({ query, format: 'JSONEachRow' });
+            const rows = await result.json();
+
+            const contribution = { local: {}, p2p: {} };
+            for (const row of rows) {
+                const via = row.received_via === 'p2p' ? 'p2p' : 'local';
+                contribution[via][row.data_source] = {
+                    devices: parseInt(row.device_count),
+                    readings: parseInt(row.reading_count)
+                };
+            }
+
+            return contribution;
+
+        } catch (error) {
+            console.error('Failed to query contribution:', error.message);
+            return null;
+        }
+    }
+
     isConnected() {
         return this.connected;
     }
