@@ -1564,6 +1564,113 @@ app.get('/api/stats/zenoh', async (req, res) => {
 
 
 // =============================================================================
+// Docker Container Stats (optional — gated on DOCKER_STATS_ENABLED env var)
+// Queries Docker Engine API via Unix socket for per-container resource usage.
+// Requires /var/run/docker.sock mounted read-only into the container.
+// =============================================================================
+const DOCKER_STATS_ENABLED = process.env.DOCKER_STATS_ENABLED === 'true';
+
+if (DOCKER_STATS_ENABLED) {
+    console.log('Docker container stats enabled');
+}
+
+/**
+ * Query Docker Engine API over Unix socket
+ */
+function dockerApiRequest(path) {
+    const http = require('http');
+    return new Promise((resolve, reject) => {
+        const req = http.request({
+            socketPath: '/var/run/docker.sock',
+            path,
+            method: 'GET',
+            timeout: 5000,
+        }, (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => {
+                try {
+                    resolve(JSON.parse(data));
+                } catch (e) {
+                    reject(new Error('Invalid JSON from Docker API'));
+                }
+            });
+        });
+        req.on('error', reject);
+        req.on('timeout', () => { req.destroy(); reject(new Error('Docker API timeout')); });
+        req.end();
+    });
+}
+
+/**
+ * Calculate CPU% from Docker stats counters
+ */
+function calculateCpuPercent(stats) {
+    const cpuDelta = stats.cpu_stats.cpu_usage.total_usage - stats.precpu_stats.cpu_usage.total_usage;
+    const systemDelta = stats.cpu_stats.system_cpu_usage - stats.precpu_stats.system_cpu_usage;
+    const cpuCount = stats.cpu_stats.online_cpus || stats.cpu_stats.cpu_usage.percpu_usage?.length || 1;
+    if (systemDelta > 0 && cpuDelta >= 0) {
+        return (cpuDelta / systemDelta) * cpuCount * 100;
+    }
+    return 0;
+}
+
+app.get('/api/stats/containers', async (req, res) => {
+    if (!DOCKER_STATS_ENABLED) {
+        return res.json({ enabled: false });
+    }
+
+    try {
+        // List running containers
+        const containers = await dockerApiRequest('/containers/json');
+
+        // Fetch stats for all containers in parallel
+        const statsPromises = containers.map(async (container) => {
+            try {
+                const stats = await dockerApiRequest(`/containers/${container.Id}/stats?stream=false`);
+                const name = (container.Names[0] || '').replace(/^\//, '');
+                const memUsed = stats.memory_stats.usage || 0;
+                const memLimit = stats.memory_stats.limit || 0;
+
+                // Sum network I/O across all interfaces
+                let netRx = 0, netTx = 0;
+                if (stats.networks) {
+                    for (const iface of Object.values(stats.networks)) {
+                        netRx += iface.rx_bytes || 0;
+                        netTx += iface.tx_bytes || 0;
+                    }
+                }
+
+                return {
+                    name,
+                    image: container.Image,
+                    status: container.Status,
+                    cpu_percent: Math.round(calculateCpuPercent(stats) * 100) / 100,
+                    memory_used: memUsed,
+                    memory_limit: memLimit,
+                    memory_percent: memLimit > 0 ? Math.round((memUsed / memLimit) * 10000) / 100 : 0,
+                    net_rx: netRx,
+                    net_tx: netTx,
+                };
+            } catch (err) {
+                const name = (container.Names[0] || '').replace(/^\//, '');
+                return { name, error: err.message };
+            }
+        });
+
+        const results = await Promise.all(statsPromises);
+        // Sort by name for consistent display
+        results.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        res.json({ enabled: true, containers: results });
+
+    } catch (error) {
+        console.error('Docker stats error:', error.message);
+        res.json({ enabled: true, error: 'Docker socket not available — mount /var/run/docker.sock:ro' });
+    }
+});
+
+
+// =============================================================================
 // P2P Proxy Endpoints (optional — gated on ZENOH_API_URL env var)
 // Proxies requests to the zenoh-api service for distributed Zenoh queries.
 // If ZENOH_API_URL is not set, these endpoints are not registered.
