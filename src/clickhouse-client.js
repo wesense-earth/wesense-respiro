@@ -1102,6 +1102,82 @@ class ClickHouseClient {
         }
     }
 
+    /**
+     * Query network-wide statistics for the Stats tab
+     * Single efficient query using countDistinctIf for all metrics
+     */
+    async queryNetworkStats() {
+        if (!this.connected || !this.client) {
+            return null;
+        }
+
+        try {
+            const query = `
+                SELECT
+                    uniqExact(device_id) as total_devices,
+                    uniqExactIf(device_id, timestamp > now() - INTERVAL 1 HOUR) as active_devices_1h,
+                    uniqExactIf(device_id, timestamp > now() - INTERVAL 24 HOUR) as active_devices_24h,
+                    countIf(timestamp > now() - INTERVAL 1 HOUR) as readings_last_1h,
+                    countIf(timestamp > now() - INTERVAL 24 HOUR) as readings_last_24h,
+                    round(countIf(timestamp > now() - INTERVAL 1 HOUR) / 60.0, 1) as readings_per_minute,
+                    uniqExactIf(geo_country, geo_country != '') as countries,
+                    uniqExactIf(concat(geo_country, '-', geo_subdivision), geo_country != '' AND geo_subdivision != '') as regions,
+                    uniqExactIf(reading_type, timestamp > now() - INTERVAL 24 HOUR) as reading_types_active,
+                    max(timestamp) as latest_reading,
+                    count() as total_readings_all_time
+                FROM sensor_readings
+            `;
+
+            const sourceQuery = `
+                SELECT
+                    data_source,
+                    uniqExact(device_id) as device_count
+                FROM sensor_readings
+                WHERE timestamp > now() - INTERVAL 24 HOUR
+                  AND data_source != ''
+                GROUP BY data_source
+                ORDER BY device_count DESC
+            `;
+
+            const [statsResult, sourceResult] = await Promise.all([
+                this.client.query({ query, format: 'JSONEachRow' }),
+                this.client.query({ query: sourceQuery, format: 'JSONEachRow' })
+            ]);
+
+            const statsRows = await statsResult.json();
+            const sourceRows = await sourceResult.json();
+
+            if (statsRows.length === 0) return null;
+
+            const row = statsRows[0];
+            const dataSources = {};
+            for (const src of sourceRows) {
+                dataSources[src.data_source] = parseInt(src.device_count);
+            }
+
+            return {
+                total_devices: parseInt(row.total_devices),
+                active_devices_1h: parseInt(row.active_devices_1h),
+                active_devices_24h: parseInt(row.active_devices_24h),
+                readings_last_1h: parseInt(row.readings_last_1h),
+                readings_last_24h: parseInt(row.readings_last_24h),
+                readings_per_minute: parseFloat(row.readings_per_minute),
+                data_sources: dataSources,
+                coverage: {
+                    countries: parseInt(row.countries),
+                    regions: parseInt(row.regions)
+                },
+                reading_types_active: parseInt(row.reading_types_active),
+                latest_reading: this._toISOString(row.latest_reading),
+                total_readings_all_time: parseInt(row.total_readings_all_time)
+            };
+
+        } catch (error) {
+            console.error('Failed to query network stats:', error.message);
+            return null;
+        }
+    }
+
     isConnected() {
         return this.connected;
     }

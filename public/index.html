@@ -1971,20 +1971,315 @@
             color: var(--text-secondary);
         }
 
-        /* Regional View */
-        .regional-header {
+        /* Stats View */
+        .stats-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+
+        .stats-header h2 {
+            font-size: 24px;
+            color: var(--text-primary);
+            margin: 0;
+        }
+
+        .stats-refresh-btn {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color, rgba(0,0,0,0.1));
+            color: var(--text-secondary);
+            padding: 6px 14px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: background 0.2s;
+        }
+
+        .stats-refresh-btn:hover {
+            background: var(--accent-color);
+            color: white;
+        }
+
+        .stats-refresh-btn.loading svg {
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        /* Hero row — big number cards */
+        .stats-hero {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
             margin-bottom: 24px;
         }
 
-        .regional-header h2 {
-            font-size: 24px;
-            color: var(--text-primary);
-            margin: 0 0 8px 0;
+        .stats-hero-card {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
         }
 
-        .regional-header p {
+        .stats-hero-value {
+            font-size: 36px;
+            font-weight: 700;
+            color: var(--accent-color);
+            line-height: 1.1;
+            margin-bottom: 6px;
+        }
+
+        .stats-hero-label {
+            font-size: 13px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .stats-hero-sub {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        /* Card grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .stats-card {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            padding: 20px;
+        }
+
+        .stats-card-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 14px;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+
+        .stats-source-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px 0;
+        }
+
+        .stats-source-row + .stats-source-row {
+            border-top: 1px solid rgba(128,128,128,0.1);
+        }
+
+        .stats-source-name {
+            display: flex;
+            align-items: center;
+            gap: 8px;
             color: var(--text-secondary);
-            margin: 0;
+            font-size: 14px;
+        }
+
+        .stats-source-count {
+            font-weight: 600;
+            color: var(--accent-color);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 14px;
+        }
+
+        /* Health indicator dots */
+        .stats-health-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 0;
+        }
+
+        .stats-health-row + .stats-health-row {
+            border-top: 1px solid rgba(128,128,128,0.1);
+        }
+
+        .stats-health-label {
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+
+        .health-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+            background: #666;
+        }
+
+        .health-dot.healthy {
+            background: #22c55e;
+            box-shadow: 0 0 6px rgba(34,197,94,0.5);
+        }
+
+        .health-dot.degraded {
+            background: #f59e0b;
+            box-shadow: 0 0 6px rgba(245,158,11,0.4);
+        }
+
+        .health-dot.offline {
+            background: #ef4444;
+        }
+
+        .health-dot.unknown {
+            background: #666;
+        }
+
+        /* Coverage detail rows */
+        .stats-detail-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 6px 0;
+            font-size: 14px;
+        }
+
+        .stats-detail-row + .stats-detail-row {
+            border-top: 1px solid rgba(128,128,128,0.1);
+        }
+
+        .stats-detail-label {
+            color: var(--text-muted);
+        }
+
+        .stats-detail-value {
+            color: var(--text-primary);
+            font-weight: 500;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Source color dots */
+        .source-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            flex-shrink: 0;
+        }
+
+        .source-dot.wesense { background: #2D6A4F; }
+        .source-dot.meshtastic-public { background: #7C3AED; }
+        .source-dot.meshtastic-community { background: #9333EA; }
+        .source-dot.homeassistant { background: #0EA5E9; }
+        .source-dot.ttn { background: #F97316; }
+        .source-dot.default { background: #8D8478; }
+
+        /* Debug section */
+        .stats-debug-toggle {
+            background: none;
+            border: 1px solid rgba(128,128,128,0.2);
+            color: var(--text-muted);
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 13px;
+            width: 100%;
+            text-align: left;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+            transition: color 0.2s;
+        }
+
+        .stats-debug-toggle:hover {
+            color: var(--text-secondary);
+        }
+
+        .stats-debug-toggle .chevron {
+            transition: transform 0.2s;
+        }
+
+        .stats-debug-toggle.expanded .chevron {
+            transform: rotate(180deg);
+        }
+
+        .stats-debug-section {
+            display: none;
+        }
+
+        .stats-debug-section.expanded {
+            display: block;
+        }
+
+        .stats-debug-card {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 12px;
+        }
+
+        .stats-debug-card-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            margin-bottom: 10px;
+        }
+
+        .stats-mono {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            color: var(--text-secondary);
+            word-break: break-all;
+        }
+
+        .stats-mono-row {
+            padding: 4px 0;
+        }
+
+        .stats-mono-row + .stats-mono-row {
+            border-top: 1px solid rgba(128,128,128,0.08);
+        }
+
+        .stats-trust-status {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+
+        .stats-trust-status.active { background: #22c55e; }
+        .stats-trust-status.revoked { background: #ef4444; }
+
+        .stats-empty {
+            color: var(--text-muted);
+            font-size: 13px;
+            font-style: italic;
+            padding: 8px 0;
+        }
+
+        /* Responsive */
+        @media (max-width: 900px) {
+            .stats-hero {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 500px) {
+            .stats-hero {
+                grid-template-columns: 1fr;
+            }
         }
 
         /* ============= NEW DASHBOARD LAYOUT ============= */
@@ -7334,7 +7629,7 @@
             <button class="nav-tab active" data-view="dashboard">Dashboard</button>
             <span class="nav-separator">|</span>
             <button class="nav-tab" data-view="map">Map</button>
-            <button class="nav-tab" data-view="regional">Regional</button>
+            <button class="nav-tab" data-view="stats">Stats</button>
         </div>
         <div class="nav-controls">
             <button class="header-btn" id="helpButton" title="Help & Legend">
@@ -8308,14 +8603,147 @@
                 </div>
             </div>
 
-            <!-- Regional View -->
-            <div id="regionalView" class="dash-view">
-                <div class="regional-header">
-                    <h2>Regional Overview</h2>
-                    <p>Aggregated sensor data by geographic region</p>
+            <!-- Stats View -->
+            <div id="statsView" class="dash-view">
+                <div class="stats-header">
+                    <h2>Network Stats</h2>
+                    <button class="stats-refresh-btn" id="statsRefreshBtn" title="Refresh stats">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+                            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                        </svg>
+                        Refresh
+                    </button>
                 </div>
-                <div class="regional-content">
-                    <p style="opacity: 0.6; text-align: center; padding: 40px;">Coming soon...</p>
+
+                <!-- Hero row -->
+                <div class="stats-hero">
+                    <div class="stats-hero-card">
+                        <div class="stats-hero-value" id="statsPeers">--</div>
+                        <div class="stats-hero-label">P2P Peers</div>
+                        <div class="stats-hero-sub" id="statsPeersSub"></div>
+                    </div>
+                    <div class="stats-hero-card">
+                        <div class="stats-hero-value" id="statsDevices">--</div>
+                        <div class="stats-hero-label">Devices Online</div>
+                        <div class="stats-hero-sub" id="statsDevicesSub">last 24h</div>
+                    </div>
+                    <div class="stats-hero-card">
+                        <div class="stats-hero-value" id="statsRate">--</div>
+                        <div class="stats-hero-label">Readings/min</div>
+                        <div class="stats-hero-sub" id="statsRateSub"></div>
+                    </div>
+                    <div class="stats-hero-card">
+                        <div class="stats-hero-value" id="statsCoverage">--</div>
+                        <div class="stats-hero-label">Coverage</div>
+                        <div class="stats-hero-sub" id="statsCoverageSub"></div>
+                    </div>
+                </div>
+
+                <!-- Card grid -->
+                <div class="stats-grid">
+                    <!-- Data Sources -->
+                    <div class="stats-card">
+                        <div class="stats-card-title">Data Sources</div>
+                        <div id="statsDataSources">
+                            <div class="stats-empty">Loading...</div>
+                        </div>
+                    </div>
+
+                    <!-- Network Health -->
+                    <div class="stats-card">
+                        <div class="stats-card-title">Network Health</div>
+                        <div id="statsHealth">
+                            <div class="stats-health-row">
+                                <span class="stats-health-label">ClickHouse</span>
+                                <span class="health-dot unknown" id="healthClickhouse"></span>
+                            </div>
+                            <div class="stats-health-row">
+                                <span class="stats-health-label">Zenoh Bridge</span>
+                                <span class="health-dot unknown" id="healthZenoh"></span>
+                            </div>
+                            <div class="stats-health-row">
+                                <span class="stats-health-label">OrbitDB</span>
+                                <span class="health-dot unknown" id="healthOrbitdb"></span>
+                            </div>
+                            <div class="stats-health-row">
+                                <span class="stats-health-label">MQTT Broker</span>
+                                <span class="health-dot unknown" id="healthMqtt"></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Coverage Details -->
+                    <div class="stats-card">
+                        <div class="stats-card-title">Coverage Details</div>
+                        <div id="statsCoverageDetails">
+                            <div class="stats-empty">Loading...</div>
+                        </div>
+                    </div>
+
+                    <!-- Live -->
+                    <div class="stats-card">
+                        <div class="stats-card-title">Live</div>
+                        <div id="statsLive">
+                            <div class="stats-empty">Loading...</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Debug section (collapsed) -->
+                <button class="stats-debug-toggle" id="statsDebugToggle">
+                    <span>Debug / Operator Panel</span>
+                    <span class="chevron">&#9660;</span>
+                </button>
+
+                <div class="stats-debug-section" id="statsDebugSection">
+                    <!-- P2P Network -->
+                    <div class="stats-debug-card">
+                        <div class="stats-debug-card-title">P2P Network</div>
+                        <div id="debugP2P">
+                            <div class="stats-empty">Not connected</div>
+                        </div>
+                    </div>
+
+                    <!-- OrbitDB Databases -->
+                    <div class="stats-debug-card">
+                        <div class="stats-debug-card-title">OrbitDB Databases</div>
+                        <div id="debugOrbitDBDatabases">
+                            <div class="stats-empty">Not connected</div>
+                        </div>
+                    </div>
+
+                    <!-- Gossipsub Topics -->
+                    <div class="stats-debug-card">
+                        <div class="stats-debug-card-title">Gossipsub Topics</div>
+                        <div id="debugGossipsub">
+                            <div class="stats-empty">Not connected</div>
+                        </div>
+                    </div>
+
+                    <!-- Trust List -->
+                    <div class="stats-debug-card">
+                        <div class="stats-debug-card-title">Trust List</div>
+                        <div id="debugTrust">
+                            <div class="stats-empty">Not connected</div>
+                        </div>
+                    </div>
+
+                    <!-- Registered Nodes -->
+                    <div class="stats-debug-card">
+                        <div class="stats-debug-card-title">Registered Nodes</div>
+                        <div id="debugNodes">
+                            <div class="stats-empty">Not connected</div>
+                        </div>
+                    </div>
+
+                    <!-- Background Tasks -->
+                    <div class="stats-debug-card">
+                        <div class="stats-debug-card-title">Background Tasks</div>
+                        <div id="debugTasks">
+                            <div class="stats-empty">Loading...</div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
