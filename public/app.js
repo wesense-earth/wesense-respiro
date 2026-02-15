@@ -11131,51 +11131,44 @@ class Respiro {
     }
 
     renderContribution(contribution, nodes) {
-        const sourceNames = {
-            'WESENSE': 'WeSense WiFi',
-            'MESHTASTIC_DOWNLINK': 'Meshtastic Downlink',
-            'MESHTASTIC_COMMUNITY': 'Meshtastic Community',
-            'HOMEASSISTANT': 'Home Assistant',
-            'TTN': 'TTN LoRaWAN'
-        };
-        const sourceDotClass = {
-            'WESENSE': 'wesense',
-            'MESHTASTIC_DOWNLINK': 'meshtastic-public',
-            'MESHTASTIC_COMMUNITY': 'meshtastic-community',
-            'HOMEASSISTANT': 'homeassistant',
-            'TTN': 'ttn'
-        };
+        // All expected sources — always shown, 0 if inactive
+        const allSources = [
+            { key: 'WESENSE', name: 'WeSense WiFi', dot: 'wesense' },
+            { key: 'MESHTASTIC_COMMUNITY', name: 'Meshtastic Community', dot: 'meshtastic-community' },
+            { key: 'MESHTASTIC_DOWNLINK', name: 'Meshtastic Downlink', dot: 'meshtastic-public' },
+            { key: 'HOMEASSISTANT', name: 'Home Assistant', dot: 'homeassistant' },
+        ];
 
         const renderSourceRows = (sources) => {
-            if (!sources || Object.keys(sources).length === 0) return '';
-            return Object.entries(sources).map(([key, data]) => `
-                <div class="stats-source-row">
-                    <span class="stats-source-name">
-                        <span class="source-dot ${sourceDotClass[key] || 'default'}"></span>
-                        ${sourceNames[key] || key}
-                    </span>
-                    <span class="stats-source-count">${data.devices} <span style="color:var(--text-muted);font-weight:400;font-size:12px">devices</span></span>
-                </div>
-            `).join('');
+            return allSources.map(({ key, name, dot }) => {
+                const data = sources?.[key];
+                const count = data ? data.devices : 0;
+                return `
+                    <div class="stats-source-row">
+                        <span class="stats-source-name">
+                            <span class="source-dot ${dot}"></span>
+                            ${name}
+                        </span>
+                        <span class="stats-source-count${count === 0 ? ' style="color:var(--text-muted)"' : ''}">${count} <span style="color:var(--text-muted);font-weight:400;font-size:12px">devices</span></span>
+                    </div>
+                `;
+            }).join('');
         };
 
         // My Contribution
         const myEl = document.getElementById('statsMyContribution');
-        const localSources = contribution?.local || {};
-        if (Object.keys(localSources).length > 0) {
-            myEl.innerHTML = renderSourceRows(localSources);
-        } else {
-            myEl.innerHTML = '<div class="stats-empty">No local data in last 24h</div>';
-        }
+        myEl.innerHTML = renderSourceRows(contribution?.local || {});
 
         // P2P Network
         const p2pEl = document.getElementById('statsP2PContribution');
         const p2pSources = contribution?.p2p || {};
         const nodeCount = nodes?.nodes?.length || 0;
-        if (Object.keys(p2pSources).length > 0) {
+        const hasP2PData = Object.keys(p2pSources).length > 0;
+
+        if (hasP2PData) {
             p2pEl.innerHTML = renderSourceRows(p2pSources);
         } else {
-            p2pEl.innerHTML = `<div class="stats-empty">No P2P data yet</div>`;
+            p2pEl.innerHTML = '<div class="stats-empty">No P2P data yet</div>';
         }
         if (nodeCount > 0) {
             p2pEl.innerHTML += `
