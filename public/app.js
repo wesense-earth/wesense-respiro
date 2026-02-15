@@ -10988,10 +10988,12 @@ class Respiro {
         // Hero: P2P Peers
         const peersEl = document.getElementById('statsPeers');
         const peersSubEl = document.getElementById('statsPeersSub');
-        if (orbitdb && orbitdb.peer_id) {
-            const peerCount = orbitdb.connected_peers?.length || 0;
-            peersEl.textContent = peerCount;
+        if (orbitdb && orbitdb.peer_count != null) {
+            peersEl.textContent = orbitdb.peer_count;
             peersSubEl.textContent = 'connected';
+        } else if (orbitdb && orbitdb.status === 'not_configured') {
+            peersEl.textContent = '--';
+            peersSubEl.textContent = 'not configured';
         } else {
             peersEl.textContent = '--';
             peersSubEl.textContent = 'offline';
@@ -11065,7 +11067,7 @@ class Respiro {
 
         if (orbitdb && orbitdb.status === 'not_configured') {
             this.setHealthIndicator('healthOrbitdb', 'unknown');
-        } else if (orbitdb && orbitdb.peer_id) {
+        } else if (orbitdb && orbitdb.peer_count != null) {
             this.setHealthIndicator('healthOrbitdb', 'healthy');
         } else {
             this.setHealthIndicator('healthOrbitdb', 'offline');
@@ -11128,12 +11130,13 @@ class Respiro {
     renderDebugStats(orbitdb, zenoh, nodes, trust, overview) {
         // P2P Network
         const p2pEl = document.getElementById('debugP2P');
-        if (orbitdb && orbitdb.peer_id) {
-            const peers = orbitdb.connected_peers || [];
-            const addrs = orbitdb.listen_addresses || [];
+        if (orbitdb && orbitdb.peer_count != null) {
+            const peers = orbitdb.peers || [];
+            const peerId = orbitdb.libp2p_peer_id || '';
+            const addrs = orbitdb.addresses || [];
             p2pEl.innerHTML = `
-                <div class="stats-mono-row stats-mono">Peer ID: ${this.statsEscapeHtml(orbitdb.peer_id)}</div>
-                <div class="stats-mono-row stats-mono">Listen: ${addrs.length > 0 ? addrs.map(a => this.statsEscapeHtml(a)).join('<br>') : 'none'}</div>
+                ${peerId ? `<div class="stats-mono-row stats-mono">Peer ID: ${this.statsEscapeHtml(peerId)}</div>` : ''}
+                ${addrs.length > 0 ? `<div class="stats-mono-row stats-mono">Listen: ${addrs.map(a => this.statsEscapeHtml(a)).join('<br>')}</div>` : ''}
                 <div class="stats-mono-row stats-mono">Connected Peers: ${peers.length}${peers.length > 0 ? '<br>' + peers.map(p => this.statsEscapeHtml(p)).join('<br>') : ''}</div>
             `;
         } else {
@@ -11142,14 +11145,13 @@ class Respiro {
 
         // OrbitDB Databases
         const dbEl = document.getElementById('debugOrbitDBDatabases');
-        if (orbitdb && orbitdb.databases) {
-            const dbs = Array.isArray(orbitdb.databases) ? orbitdb.databases : Object.entries(orbitdb.databases);
-            if (dbs.length > 0) {
-                dbEl.innerHTML = dbs.map(db => {
-                    if (Array.isArray(db)) {
-                        return `<div class="stats-mono-row stats-mono">${this.statsEscapeHtml(db[0])}: ${db[1]} docs</div>`;
-                    }
-                    return `<div class="stats-mono-row stats-mono">${this.statsEscapeHtml(db.address || db.name || 'unknown')}: ${db.count ?? db.doc_count ?? '?'} docs</div>`;
+        if (orbitdb && orbitdb.db_sizes) {
+            const dbNames = Object.keys(orbitdb.db_sizes);
+            if (dbNames.length > 0) {
+                dbEl.innerHTML = dbNames.map(name => {
+                    const count = orbitdb.db_sizes[name];
+                    const addr = orbitdb.db_addresses?.[name] || '';
+                    return `<div class="stats-mono-row stats-mono"><strong>${this.statsEscapeHtml(name)}</strong>: ${count} docs${addr ? `<br><span style="color:var(--text-muted)">${this.statsEscapeHtml(addr)}</span>` : ''}</div>`;
                 }).join('');
             } else {
                 dbEl.innerHTML = '<div class="stats-empty">No databases</div>';
@@ -11161,13 +11163,11 @@ class Respiro {
         // Gossipsub Topics
         const gossipEl = document.getElementById('debugGossipsub');
         if (orbitdb && orbitdb.gossipsub_topics) {
-            const topics = Array.isArray(orbitdb.gossipsub_topics) ? orbitdb.gossipsub_topics : Object.entries(orbitdb.gossipsub_topics);
+            const topics = Object.entries(orbitdb.gossipsub_topics);
             if (topics.length > 0) {
-                gossipEl.innerHTML = topics.map(t => {
-                    if (Array.isArray(t)) {
-                        return `<div class="stats-mono-row stats-mono">${this.statsEscapeHtml(t[0])}: ${t[1]} subscribers</div>`;
-                    }
-                    return `<div class="stats-mono-row stats-mono">${this.statsEscapeHtml(t.topic || t.name || 'unknown')}: ${t.subscribers ?? t.peers ?? '?'} subscribers</div>`;
+                gossipEl.innerHTML = topics.map(([topic, subscribers]) => {
+                    const count = Array.isArray(subscribers) ? subscribers.length : subscribers;
+                    return `<div class="stats-mono-row stats-mono">${this.statsEscapeHtml(topic)}: ${count} subscriber${count !== 1 ? 's' : ''}</div>`;
                 }).join('');
             } else {
                 gossipEl.innerHTML = '<div class="stats-empty">No topics</div>';
@@ -11176,14 +11176,16 @@ class Respiro {
             gossipEl.innerHTML = '<div class="stats-empty">OrbitDB not connected</div>';
         }
 
-        // Trust List
+        // Trust List — shape: { keys: { ingester_id: { version: { status, added, public_key } } } }
         const trustEl = document.getElementById('debugTrust');
-        const trustList = trust?.trust || trust?.ingesters || [];
-        if (trustList.length > 0) {
-            trustEl.innerHTML = trustList.map(entry => {
-                const id = entry.ingester_id || entry.id || 'unknown';
-                const status = entry.revoked ? 'revoked' : 'active';
-                return `<div class="stats-mono-row stats-mono"><span class="stats-trust-status ${status}"></span>${this.statsEscapeHtml(id)}</div>`;
+        const trustKeys = trust?.keys || {};
+        const trustEntries = Object.entries(trustKeys);
+        if (trustEntries.length > 0) {
+            trustEl.innerHTML = trustEntries.map(([ingesterId, versions]) => {
+                // Get the latest version's status
+                const latestVersion = Object.values(versions).pop();
+                const status = latestVersion?.status === 'active' ? 'active' : 'revoked';
+                return `<div class="stats-mono-row stats-mono"><span class="stats-trust-status ${status}"></span>${this.statsEscapeHtml(ingesterId)}</div>`;
             }).join('');
         } else {
             trustEl.innerHTML = '<div class="stats-empty">No trust entries</div>';
@@ -11194,9 +11196,9 @@ class Respiro {
         const nodeList = nodes?.nodes || [];
         if (nodeList.length > 0) {
             nodesEl.innerHTML = nodeList.map(node => {
-                const id = node.ingester_id || node.id || 'unknown';
-                const region = node.region || '';
-                return `<div class="stats-mono-row stats-mono">${this.statsEscapeHtml(id)}${region ? ' <span style="color:var(--text-muted)">(' + this.statsEscapeHtml(region) + ')</span>' : ''}</div>`;
+                const id = node.ingester_id || node._id || 'unknown';
+                const endpoint = node.zenoh_endpoint || '';
+                return `<div class="stats-mono-row stats-mono">${this.statsEscapeHtml(id)}${endpoint ? ' <span style="color:var(--text-muted)">(' + this.statsEscapeHtml(endpoint) + ')</span>' : ''}</div>`;
             }).join('');
         } else {
             nodesEl.innerHTML = '<div class="stats-empty">No registered nodes</div>';
