@@ -4,6 +4,7 @@ const FRESHNESS_THRESHOLDS = {
     'WESENSE': 10 * 60 * 1000,              // 10 minutes
     'MESHTASTIC_PUBLIC': 61 * 60 * 1000,    // 61 minutes (catches 60-min reporters)
     'MESHTASTIC_COMMUNITY': 61 * 60 * 1000, // 61 minutes
+    'MESHTASTIC_DOWNLINK': 61 * 60 * 1000,  // 61 minutes
     'default': 10 * 60 * 1000               // Conservative default
 };
 
