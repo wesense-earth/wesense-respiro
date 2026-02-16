@@ -9105,23 +9105,14 @@ class Respiro {
     }
 
     getEnvironmentType(sensor) {
-        // Get deployment_type from sensor data
         let envType = sensor.deployment_type;
-
-        // Normalize the value
         if (envType) {
             envType = envType.toUpperCase().trim();
-            // Handle DEPLOYMENT_UNKNOWN prefix from protobuf
             if (envType === 'DEPLOYMENT_UNKNOWN') {
-                return 'UNKNOWN';
-            }
-            if (envType === '') {
                 return 'UNKNOWN';
             }
             return envType;
         }
-
-        // Fallback for empty/null/undefined deployment_type
         return 'UNKNOWN';
     }
 
