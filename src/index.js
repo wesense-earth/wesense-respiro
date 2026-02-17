@@ -1848,6 +1848,26 @@ function generatePMTiles(pmtilesPath, boundariesDir, skipTippecanoe = false) {
         for (let level = 0; level <= 4; level++) {
             const file = path.join(boundariesDir, `processed_adm${level}.geojson`);
             if (fs.existsSync(file)) {
+                // Validate file structure before passing to tippecanoe
+                try {
+                    const fd = fs.openSync(file, 'r');
+                    const headBuf = Buffer.alloc(200);
+                    fs.readSync(fd, headBuf, 0, 200, 0);
+                    const stats = fs.fstatSync(fd);
+                    const tailBuf = Buffer.alloc(20);
+                    fs.readSync(fd, tailBuf, 0, 20, Math.max(0, stats.size - 20));
+                    fs.closeSync(fd);
+                    const head = headBuf.toString('utf-8');
+                    const tail = tailBuf.toString('utf-8').trimEnd();
+                    if (!head.includes('FeatureCollection') || !tail.endsWith(']}')) {
+                        console.log(`  WARNING: processed_adm${level}.geojson is corrupt, skipping`);
+                        fs.unlinkSync(file);
+                        continue;
+                    }
+                } catch (e) {
+                    console.log(`  WARNING: Could not validate processed_adm${level}.geojson: ${e.message}`);
+                    continue;
+                }
                 const zoomRange = layerZoomRanges[level];
                 // Use -L with JSON config for per-layer zoom control
                 const layerConfig = JSON.stringify({
