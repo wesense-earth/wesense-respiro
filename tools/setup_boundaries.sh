@@ -105,7 +105,10 @@ echo "      (81 countries for ADM3, 21 countries for ADM4)"
 echo "      This may take 10-15 minutes..."
 echo ""
 
-python3 "$SCRIPT_DIR/download_adm3_adm4.py"
+python3 "$SCRIPT_DIR/download_adm3_adm4.py" || {
+    echo "  WARNING: ADM3/ADM4 download failed (may need more memory)."
+    echo "  Continuing with ADM0/1/2 only — these are sufficient for leaderboards and regions."
+}
 
 # ============================================
 # Step 3: Load into ClickHouse
