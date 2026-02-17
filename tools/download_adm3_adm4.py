@@ -5,16 +5,17 @@ Download ADM3 and ADM4 boundary data from geoBoundaries API.
 geoBoundaries doesn't provide global CGAZ files for ADM3/ADM4, so we need to
 download each country individually and merge them.
 
+Memory-efficient: streams features to disk one country at a time instead of
+accumulating everything in RAM.
+
 Usage:
     python3 tools/download_adm3_adm4.py
 
 Output:
     data/boundaries/downloaded_adm3/*.geojson  (per-country files)
     data/boundaries/downloaded_adm4/*.geojson  (per-country files)
-    data/boundaries/merged_adm3.geojson        (merged file)
-    data/boundaries/merged_adm4.geojson        (merged file)
-    data/boundaries/processed_adm3.geojson     (processed with region_id)
-    data/boundaries/processed_adm4.geojson     (processed with region_id)
+    data/boundaries/processed_adm3.geojson     (merged+processed, streamed)
+    data/boundaries/processed_adm4.geojson     (merged+processed, streamed)
 """
 
 import json
@@ -107,7 +108,7 @@ def render_progress_bar(current, total, width=30, label=''):
     percent = int((current / total) * 100) if total > 0 else 0
     filled = int((current / total) * width) if total > 0 else 0
     empty = width - filled
-    bar = '█' * filled + '░' * empty
+    bar = '=' * filled + '-' * empty
     return f"  [{bar}] {percent}% ({current}/{total}) {label}"
 
 
@@ -152,80 +153,19 @@ def download_all_countries(adm_level):
                 failed_countries.append(f"{result['iso']}: {result.get('error', 'unknown')[:30]}")
                 label = f"Failed {result['iso']}"
 
-            # Update progress bar in place
             sys.stdout.write('\r' + render_progress_bar(completed, total, label=label) + '   ')
             sys.stdout.flush()
 
-    # Final line
     sys.stdout.write('\r' + render_progress_bar(total, total, label='Complete') + '   \n')
     sys.stdout.flush()
 
     print(f"  Summary: {downloaded} downloaded, {cached} cached, {failed} failed")
 
-    # Show failed countries if any
     if failed_countries:
         print(f"  Failed: {', '.join(c.split(':')[0] for c in failed_countries[:10])}" +
               (f" (+{len(failed_countries)-10} more)" if len(failed_countries) > 10 else ""))
 
     return results
-
-
-def merge_geojson_files(adm_level):
-    """Merge all downloaded country files into a single GeoJSON."""
-    input_dir = BOUNDARIES_DIR / f"downloaded_adm{adm_level}"
-    output_path = BOUNDARIES_DIR / f"merged_adm{adm_level}.geojson"
-
-    if not input_dir.exists():
-        print(f"No downloaded files for ADM{adm_level}")
-        return None
-
-    all_features = []
-    files = list(input_dir.glob("*.geojson"))
-    total = len(files)
-
-    print(f"\nMerging ADM{adm_level} files ({total} countries)...")
-
-    for i, filepath in enumerate(files):
-        try:
-            with open(filepath, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-
-            features = data.get('features', [])
-
-            # Add source country to each feature (for debugging)
-            iso = filepath.stem.split('_')[0]
-            for feature in features:
-                if 'properties' not in feature:
-                    feature['properties'] = {}
-                feature['properties']['_source_iso'] = iso
-
-            all_features.extend(features)
-
-            # Update progress bar
-            sys.stdout.write('\r' + render_progress_bar(i + 1, total, label=f"{iso} ({len(all_features)} features)") + '   ')
-            sys.stdout.flush()
-
-        except Exception as e:
-            sys.stdout.write('\r' + ' ' * 80 + '\r')
-            print(f"  Error processing {filepath.name}: {e}")
-
-    sys.stdout.write('\r' + render_progress_bar(total, total, label=f'Complete ({len(all_features)} features)') + '   \n')
-    sys.stdout.flush()
-
-    # Create merged GeoJSON
-    merged = {
-        "type": "FeatureCollection",
-        "features": all_features
-    }
-
-    print(f"  Writing to {output_path.name}...")
-    with open(output_path, 'w', encoding='utf-8') as f:
-        json.dump(merged, f, ensure_ascii=False)
-
-    file_size_mb = output_path.stat().st_size / (1024 * 1024)
-    print(f"  Created {output_path.name} ({file_size_mb:.1f} MB)")
-
-    return output_path
 
 
 def fix_double_encoding(text):
@@ -243,18 +183,15 @@ def extract_english_name(text):
     if not isinstance(text, str) or not text:
         return text
 
-    # Check if text contains CJK characters
     has_cjk = any(0x4E00 <= ord(c) <= 0x9FFF or 0x3400 <= ord(c) <= 0x4DBF for c in text)
 
     if not has_cjk:
         return text
 
-    # Try to extract English from parentheses
     match = re.search(r'\(([A-Za-z][A-Za-z\s\-\']+)\)', text)
     if match:
         return match.group(1).strip()
 
-    # Try to find English name after CJK characters
     match = re.search(r'[^\x00-\x7F]+\s+([A-Za-z][A-Za-z\s\-\']+)$', text)
     if match:
         return match.group(1).strip()
@@ -262,79 +199,109 @@ def extract_english_name(text):
     return text
 
 
-def process_merged_file(adm_level):
-    """Process merged file to add consistent region_id properties."""
-    input_path = BOUNDARIES_DIR / f"merged_adm{adm_level}.geojson"
+def process_feature(feature, adm_level):
+    """Normalize a single feature's properties. Returns the modified feature."""
+    props = feature.get('properties', {})
+
+    country_code = (
+        props.get('shapeGroup') or
+        props.get('_source_iso') or
+        props.get('ISO_A3') or
+        'UNK'
+    )
+
+    shape_id = (
+        props.get('shapeID') or
+        props.get('shapeName', '') + str(hash(str(props)))
+    )
+
+    if shape_id:
+        short_id = str(shape_id)[-12:]
+        region_id = f"{country_code}_ADM{adm_level}_{short_id}"
+    else:
+        region_id = f"{country_code}_ADM{adm_level}_{hash(str(props))}"
+
+    raw_name = props.get('shapeName', props.get('name', ''))
+    fixed_name = fix_double_encoding(raw_name)
+    english_name = extract_english_name(fixed_name)
+
+    feature['properties'] = {
+        'region_id': region_id,
+        'name': english_name,
+        'country_code': country_code,
+        'admin_level': adm_level,
+        'original_id': str(shape_id) if shape_id else ''
+    }
+
+    return feature
+
+
+def stream_merge_and_process(adm_level):
+    """
+    Merge and process all downloaded country files into a single GeoJSON.
+    Streams one country at a time — never holds all features in memory.
+    """
+    input_dir = BOUNDARIES_DIR / f"downloaded_adm{adm_level}"
     output_path = BOUNDARIES_DIR / f"processed_adm{adm_level}.geojson"
 
-    if not input_path.exists():
-        print(f"No merged file for ADM{adm_level}")
+    if not input_dir.exists():
+        print(f"No downloaded files for ADM{adm_level}")
         return None
 
-    print(f"\nProcessing ADM{adm_level} file...")
-    print(f"  Loading {input_path.name}...")
+    files = sorted(input_dir.glob("*.geojson"))
+    total_files = len(files)
 
-    with open(input_path, 'r', encoding='utf-8') as f:
-        data = json.load(f)
+    if total_files == 0:
+        print(f"No GeoJSON files found for ADM{adm_level}")
+        return None
 
-    features = data['features']
-    total = len(features)
+    print(f"\nMerging and processing ADM{adm_level} ({total_files} countries, streaming)...")
 
-    print(f"  Normalizing {total} features...")
+    total_features = 0
+    first_feature = True
 
-    for i, feature in enumerate(features):
-        props = feature.get('properties', {})
+    with open(output_path, 'w', encoding='utf-8') as out:
+        out.write('{"type":"FeatureCollection","features":[\n')
 
-        # Get country code - try multiple possible fields
-        country_code = (
-            props.get('shapeGroup') or
-            props.get('_source_iso') or
-            props.get('ISO_A3') or
-            'UNK'
-        )
+        for file_idx, filepath in enumerate(files):
+            iso = filepath.stem.split('_')[0]
 
-        # Get shape ID for uniqueness
-        shape_id = (
-            props.get('shapeID') or
-            props.get('shapeName', '') + str(hash(str(props)))
-        )
+            try:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
 
-        # Create region_id
-        if shape_id:
-            short_id = str(shape_id)[-12:]  # Use more chars for ADM3/4 uniqueness
-            region_id = f"{country_code}_ADM{adm_level}_{short_id}"
-        else:
-            region_id = f"{country_code}_ADM{adm_level}_{hash(str(props))}"
+                features = data.get('features', [])
 
-        # Get and clean name
-        raw_name = props.get('shapeName', props.get('name', ''))
-        fixed_name = fix_double_encoding(raw_name)
-        english_name = extract_english_name(fixed_name)
+                for feature in features:
+                    if 'properties' not in feature:
+                        feature['properties'] = {}
+                    feature['properties']['_source_iso'] = iso
 
-        # Normalize properties
-        feature['properties'] = {
-            'region_id': region_id,
-            'name': english_name,
-            'country_code': country_code,
-            'admin_level': adm_level,
-            'original_id': str(shape_id) if shape_id else ''
-        }
+                    feature = process_feature(feature, adm_level)
 
-        # Update progress every 1000 features
-        if (i + 1) % 1000 == 0 or i == total - 1:
-            sys.stdout.write('\r' + render_progress_bar(i + 1, total) + '   ')
+                    if not first_feature:
+                        out.write(',\n')
+                    json.dump(feature, out, ensure_ascii=False)
+                    first_feature = False
+                    total_features += 1
+
+                # Free memory after each country
+                del data, features
+
+            except Exception as e:
+                sys.stdout.write('\r' + ' ' * 80 + '\r')
+                print(f"  Error processing {filepath.name}: {e}")
+
+            sys.stdout.write('\r' + render_progress_bar(file_idx + 1, total_files, label=f"{iso} ({total_features} features)") + '   ')
             sys.stdout.flush()
 
-    sys.stdout.write('\r' + render_progress_bar(total, total, label='Complete') + '   \n')
+        out.write('\n]}')
+
+    sys.stdout.write('\r' + render_progress_bar(total_files, total_files, label=f'Complete ({total_features} features)') + '   \n')
     sys.stdout.flush()
 
-    # Write processed file
-    print(f"  Writing to {output_path.name}...")
-    with open(output_path, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False)
-
     file_size_mb = output_path.stat().st_size / (1024 * 1024)
-    print(f"  Created {output_path.name} ({file_size_mb:.1f} MB)")
+    print(f"  Created {output_path.name} ({file_size_mb:.1f} MB, {total_features} features)")
 
     return output_path
 
@@ -344,7 +311,6 @@ def main():
     print("geoBoundaries ADM3/ADM4 Downloader")
     print("=" * 60)
 
-    # Ensure output directory exists
     BOUNDARIES_DIR.mkdir(parents=True, exist_ok=True)
 
     # Process ADM3
@@ -352,40 +318,18 @@ def main():
     print("PROCESSING ADM3")
     print("=" * 60)
     download_all_countries(3)
-    merge_geojson_files(3)
-    process_merged_file(3)
+    stream_merge_and_process(3)
 
     # Process ADM4
     print("\n" + "=" * 60)
     print("PROCESSING ADM4")
     print("=" * 60)
     download_all_countries(4)
-    merge_geojson_files(4)
-    process_merged_file(4)
+    stream_merge_and_process(4)
 
-    # Print tippecanoe command
     print("\n" + "=" * 60)
-    print("NEXT STEPS")
+    print("ADM3/ADM4 download complete!")
     print("=" * 60)
-    print("""
-1. Load boundaries into ClickHouse:
-   python3 tools/load_boundaries_to_clickhouse.py
-
-2. Regenerate PMTiles with all admin levels:
-   cd data/boundaries
-   tippecanoe -o regions.pmtiles \\
-     --layer=adm0 --named-layer=adm0:processed_adm0.geojson \\
-     --layer=adm1 --named-layer=adm1:processed_adm1.geojson \\
-     --layer=adm2 --named-layer=adm2:processed_adm2.geojson \\
-     --layer=adm3 --named-layer=adm3:processed_adm3.geojson \\
-     --layer=adm4 --named-layer=adm4:processed_adm4.geojson \\
-     --minimum-zoom=0 \\
-     --maximum-zoom=14 \\
-     --simplification=10 \\
-     --drop-densest-as-needed \\
-     --extend-zooms-if-still-dropping \\
-     --force
-""")
 
 
 if __name__ == '__main__':
