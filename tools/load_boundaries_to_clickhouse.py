@@ -2,6 +2,9 @@
 """
 Load GeoJSON boundary files into ClickHouse for spatial queries.
 Uses ClickHouse HTTP interface directly — no pip dependencies needed (stdlib only).
+
+Assumes the wesense_respiro.region_boundaries table already exists (created by
+the ClickHouse init SQL). Only needs SELECT/INSERT privileges.
 """
 
 import json
@@ -103,29 +106,15 @@ def connect_clickhouse():
     return client
 
 
-def create_schema(client):
-    """Create the region_boundaries table in the wesense_respiro database."""
-    print("\nCreating region_boundaries table in wesense_respiro database...")
-
-    client.command('DROP TABLE IF EXISTS wesense_respiro.region_boundaries')
-
-    client.command('''
-        CREATE TABLE wesense_respiro.region_boundaries (
-            region_id String,
-            admin_level UInt8,
-            name String,
-            country_code String,
-            original_id String,
-            polygon Array(Array(Tuple(Float64, Float64))),
-            bbox_min_lon Float64,
-            bbox_max_lon Float64,
-            bbox_min_lat Float64,
-            bbox_max_lat Float64
-        ) ENGINE = MergeTree()
-        ORDER BY (admin_level, country_code, region_id)
+def check_existing_data(client):
+    """Check if boundary data already exists. Returns dict of admin_level -> count."""
+    rows = client.query_rows('''
+        SELECT admin_level, count() as cnt
+        FROM wesense_respiro.region_boundaries
+        GROUP BY admin_level
+        ORDER BY admin_level
     ''')
-
-    print("Schema created successfully!")
+    return {int(row['admin_level']): int(row['cnt']) for row in rows}
 
 
 def extract_polygon_coords(geometry):
@@ -266,36 +255,6 @@ def load_geojson_file(client, filepath, expected_admin_level):
     return total - skipped
 
 
-def update_device_region_cache_schema(client):
-    """Add ADM3/ADM4 columns to device_region_cache if they don't exist."""
-    print("\nUpdating device_region_cache schema for ADM3/ADM4...")
-
-    rows = client.query_rows('''
-        SELECT name FROM system.columns
-        WHERE database = 'wesense_respiro' AND table = 'device_region_cache'
-    ''')
-    existing_columns = {row['name'] for row in rows}
-
-    columns_to_add = []
-    if 'region_adm3_id' not in existing_columns:
-        columns_to_add.append(('region_adm3_id', "String DEFAULT ''"))
-    if 'region_adm4_id' not in existing_columns:
-        columns_to_add.append(('region_adm4_id', "String DEFAULT ''"))
-
-    if not columns_to_add:
-        print("  ADM3/ADM4 columns already exist")
-        return
-
-    for col_name, col_type in columns_to_add:
-        print(f"  Adding column {col_name}...")
-        client.command(f'''
-            ALTER TABLE wesense_respiro.device_region_cache
-            ADD COLUMN IF NOT EXISTS {col_name} {col_type}
-        ''')
-
-    print("  Schema updated successfully!")
-
-
 def verify_data(client):
     """Verify the loaded data."""
     print("\nVerifying loaded data...")
@@ -310,16 +269,6 @@ def verify_data(client):
     print("Counts by admin level:")
     for row in rows:
         print(f"  ADM{row['admin_level']}: {row['cnt']} regions")
-
-    print("\nSample NZ regions:")
-    rows = client.query_rows('''
-        SELECT region_id, name, country_code
-        FROM wesense_respiro.region_boundaries
-        WHERE country_code = 'NZL' AND admin_level = 2
-        LIMIT 5
-    ''')
-    for row in rows:
-        print(f"  {row['region_id']}: {row['name']} ({row['country_code']})")
 
     print("\nTesting pointInPolygon for Auckland (174.763, -36.848)...")
     rows = client.query_rows('''
@@ -340,18 +289,26 @@ def main():
 
     try:
         client = connect_clickhouse()
-        create_schema(client)
+
+        # Check for existing data — skip levels that are already loaded
+        existing = check_existing_data(client)
+        if existing:
+            print("\nExisting boundary data found:")
+            for level, count in sorted(existing.items()):
+                print(f"  ADM{level}: {count} regions")
 
         total_loaded = 0
         for filepath, admin_level in BOUNDARY_FILES:
+            if admin_level in existing and existing[admin_level] > 0:
+                print(f"\n  Skipping ADM{admin_level} — already has {existing[admin_level]} regions")
+                continue
             loaded = load_geojson_file(client, filepath, admin_level)
             total_loaded += loaded
 
-        update_device_region_cache_schema(client)
         verify_data(client)
 
         print("\n" + "=" * 60)
-        print(f"Successfully loaded {total_loaded} total regions!")
+        print(f"Successfully loaded {total_loaded} new regions!")
         print("=" * 60)
 
     except Exception as e:
