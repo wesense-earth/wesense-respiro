@@ -28,9 +28,11 @@ RUN ARCH=$(case "${TARGETARCH}" in (amd64) echo "x86_64";; (arm64) echo "arm64";
 # Stage 3: Production image
 FROM node:20-slim
 
-# Runtime libraries needed by tippecanoe
+# Runtime libraries needed by tippecanoe + tools for boundary setup
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libsqlite3-0 \
+    python3 python3-pip curl bash \
+    && pip3 install --no-cache-dir --break-system-packages clickhouse-connect \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy tool binaries from builder stages
@@ -49,6 +51,7 @@ RUN npm ci --only=production
 # Copy application source
 COPY src/ ./src/
 COPY public/ ./public/
+COPY tools/ ./tools/
 
 # Create data directory for boundaries and cache
 RUN mkdir -p /app/data
