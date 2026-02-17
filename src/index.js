@@ -2131,8 +2131,14 @@ async function exportBoundariesFromClickHouse(boundariesDir) {
             return false;
         }
 
-        // Export each admin level
+        // Export each admin level (ADM0-2 only — ADM3/4 are too large for
+        // Node.js memory and must come from the Python setup script)
         for (const { admin_level, cnt } of counts) {
+            if (parseInt(admin_level) > 2) {
+                console.log(`  ADM${admin_level}: Skipping export (${cnt} regions too large — use setup script)`);
+                continue;
+            }
+
             const outputPath = path.join(boundariesDir, `processed_adm${admin_level}.geojson`);
 
             // Skip if file already exists and has content
