@@ -2131,14 +2131,9 @@ async function exportBoundariesFromClickHouse(boundariesDir) {
             return false;
         }
 
-        // Export each admin level (ADM0-2 only — ADM3/4 are too large for
-        // Node.js memory and must come from the Python setup script)
+        // Export each admin level — streams rows to disk one at a time
+        // so even ADM3 (105K regions, ~3GB) works without OOM
         for (const { admin_level, cnt } of counts) {
-            if (parseInt(admin_level) > 2) {
-                console.log(`  ADM${admin_level}: Skipping export (${cnt} regions too large — use setup script)`);
-                continue;
-            }
-
             const outputPath = path.join(boundariesDir, `processed_adm${admin_level}.geojson`);
 
             // Skip if file already exists and has content
@@ -2150,9 +2145,8 @@ async function exportBoundariesFromClickHouse(boundariesDir) {
                 }
             }
 
-            console.log(`  ADM${admin_level}: Exporting ${cnt} regions...`);
+            console.log(`  ADM${admin_level}: Exporting ${cnt} regions (streaming)...`);
 
-            // Query all regions for this admin level
             const result = await clickHouseClient.query({
                 query: `
                     SELECT
@@ -2161,52 +2155,72 @@ async function exportBoundariesFromClickHouse(boundariesDir) {
                         name,
                         country_code,
                         original_id,
-                        polygon,
-                        bbox_min_lon,
-                        bbox_max_lon,
-                        bbox_min_lat,
-                        bbox_max_lat
+                        polygon
                     FROM wesense_respiro.region_boundaries
                     WHERE admin_level = {admin_level:UInt8}
                 `,
                 query_params: { admin_level },
                 format: 'JSONEachRow'
             });
-            const rows = await result.json();
 
-            // Convert to GeoJSON FeatureCollection
-            const features = rows.map(row => {
-                // Convert polygon array back to GeoJSON coordinates
-                // ClickHouse stores as Array(Array(Tuple(Float64, Float64)))
-                // GeoJSON needs [[[lon, lat], ...]]
-                const coordinates = row.polygon.map(ring =>
-                    ring.map(point => [point[0], point[1]])
-                );
+            // Stream to temp file — one feature per line, constant memory
+            const tmpPath = outputPath + '.tmp';
+            const writeStream = fs.createWriteStream(tmpPath);
+            writeStream.write('{"type":"FeatureCollection","features":[\n');
 
-                return {
-                    type: 'Feature',
-                    properties: {
-                        region_id: row.region_id,
-                        admin_level: row.admin_level,
-                        name: row.name,
-                        country_code: row.country_code,
-                        original_id: row.original_id
-                    },
-                    geometry: {
-                        type: 'Polygon',
-                        coordinates: coordinates
+            let featureCount = 0;
+            const stream = result.stream();
+
+            for await (const rows of stream) {
+                for (const row of rows) {
+                    const parsed = typeof row.json === 'function' ? row.json() : JSON.parse(row.text);
+                    const coordinates = parsed.polygon.map(ring =>
+                        ring.map(point => [point[0], point[1]])
+                    );
+                    const feature = {
+                        type: 'Feature',
+                        properties: {
+                            region_id: parsed.region_id,
+                            admin_level: parsed.admin_level,
+                            name: parsed.name,
+                            country_code: parsed.country_code,
+                            original_id: parsed.original_id
+                        },
+                        geometry: {
+                            type: 'Polygon',
+                            coordinates: coordinates
+                        }
+                    };
+
+                    if (featureCount > 0) writeStream.write(',\n');
+                    writeStream.write(JSON.stringify(feature));
+                    featureCount++;
+
+                    if (featureCount % 5000 === 0) {
+                        process.stdout.write(`\r  ADM${admin_level}: ${featureCount}/${cnt} features exported`);
                     }
-                };
-            });
+                }
+            }
 
-            const geojson = {
-                type: 'FeatureCollection',
-                features: features
-            };
+            writeStream.write('\n]}');
+            await new Promise(resolve => writeStream.end(resolve));
 
-            fs.writeFileSync(outputPath, JSON.stringify(geojson));
-            const sizeMB = (fs.statSync(outputPath).size / 1024 / 1024).toFixed(1);
-            console.log(`  ADM${admin_level}: Exported ${features.length} features (${sizeMB}MB)`);
+            // Validate temp file before renaming
+            const tmpStats = fs.statSync(tmpPath);
+            const fd = fs.openSync(tmpPath, 'r');
+            const tailBuf = Buffer.alloc(20);
+            fs.readSync(fd, tailBuf, 0, 20, Math.max(0, tmpStats.size - 20));
+            fs.closeSync(fd);
+            const tail = tailBuf.toString('utf-8').trimEnd();
+
+            if (tail.endsWith(']}') && tmpStats.size > 50) {
+                fs.renameSync(tmpPath, outputPath);
+                const sizeMB = (tmpStats.size / 1024 / 1024).toFixed(1);
+                console.log(`\r  ADM${admin_level}: Exported ${featureCount} features (${sizeMB}MB)`);
+            } else {
+                console.log(`\r  ADM${admin_level}: Export failed validation, removing`);
+                fs.unlinkSync(tmpPath);
+            }
         }
 
         console.log('Boundary export complete!');
