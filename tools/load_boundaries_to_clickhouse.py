@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """
 Load GeoJSON boundary files into ClickHouse for spatial queries.
-Per architecture document docs/region-overlay-architecture.md Section 4.2-4.3
+Uses ClickHouse HTTP interface directly — no pip dependencies needed (stdlib only).
 """
 
 import json
 import os
 import sys
-import clickhouse_connect
+import urllib.request
+import urllib.error
+import urllib.parse
 
 # Load .env file if present
 def load_dotenv():
@@ -39,35 +41,74 @@ BOUNDARY_FILES = [
     ('data/boundaries/processed_adm4.geojson', 4),  # Optional: 21 countries, ~94K units
 ]
 
+
+class ClickHouseHTTP:
+    """Minimal ClickHouse HTTP client using stdlib only."""
+
+    def __init__(self, host, port, username, password):
+        self.base_url = f"http://{host}:{port}/"
+        self.username = username
+        self.password = password
+
+    def _request(self, sql, data=None):
+        """Execute a query via HTTP POST."""
+        params = {'user': self.username}
+        if self.password:
+            params['password'] = self.password
+        url = self.base_url + '?' + urllib.parse.urlencode(params)
+        body = sql.encode('utf-8') if data is None else data
+        if data is not None:
+            url += '&' + urllib.parse.urlencode({'query': sql})
+            body = data
+        req = urllib.request.Request(url, data=body, method='POST')
+        try:
+            with urllib.request.urlopen(req) as resp:
+                return resp.read().decode('utf-8')
+        except urllib.error.HTTPError as e:
+            err_body = e.read().decode('utf-8', errors='replace')
+            raise RuntimeError(f"ClickHouse error ({e.code}): {err_body}") from e
+
+    def command(self, sql):
+        """Execute a DDL/command statement."""
+        self._request(sql)
+
+    def query_rows(self, sql):
+        """Execute a SELECT and return list of dicts."""
+        result = self._request(sql + ' FORMAT JSONEachRow')
+        rows = []
+        for line in result.strip().split('\n'):
+            if line:
+                rows.append(json.loads(line))
+        return rows
+
+    def insert_json(self, table, rows):
+        """Insert rows as JSONEachRow."""
+        sql = f"INSERT INTO {table} FORMAT JSONEachRow"
+        ndjson = '\n'.join(json.dumps(row, ensure_ascii=False) for row in rows)
+        self._request(sql, ndjson.encode('utf-8'))
+
+
 def get_base_path():
     """Get the base path of the project."""
     script_dir = os.path.dirname(os.path.abspath(__file__))
     return os.path.dirname(script_dir)
 
+
 def connect_clickhouse():
     """Connect to ClickHouse via HTTP."""
     print(f"Connecting to ClickHouse at {CLICKHOUSE_HOST}:{CLICKHOUSE_PORT}...")
-    client = clickhouse_connect.get_client(
-        host=CLICKHOUSE_HOST,
-        port=CLICKHOUSE_PORT,
-        username=CLICKHOUSE_USER,
-        password=CLICKHOUSE_PASSWORD,
-    )
-    # Test connection
-    result = client.query('SELECT 1')
+    client = ClickHouseHTTP(CLICKHOUSE_HOST, CLICKHOUSE_PORT, CLICKHOUSE_USER, CLICKHOUSE_PASSWORD)
+    client.command('SELECT 1')
     print("Connected successfully!")
     return client
+
 
 def create_schema(client):
     """Create the region_boundaries table in the wesense_respiro database."""
     print("\nCreating region_boundaries table in wesense_respiro database...")
 
-    # Drop existing table to recreate with correct schema
     client.command('DROP TABLE IF EXISTS wesense_respiro.region_boundaries')
 
-    # Create region_boundaries table
-    # Using Array(Tuple(Float64, Float64)) for polygon rings
-    # ClickHouse pointInPolygon expects Array(Tuple(Float64, Float64))
     client.command('''
         CREATE TABLE wesense_respiro.region_boundaries (
             region_id String,
@@ -75,9 +116,7 @@ def create_schema(client):
             name String,
             country_code String,
             original_id String,
-            -- Polygon stored as array of rings, each ring is array of (lon, lat) tuples
             polygon Array(Array(Tuple(Float64, Float64))),
-            -- Bounding box for fast filtering
             bbox_min_lon Float64,
             bbox_max_lon Float64,
             bbox_min_lat Float64,
@@ -88,34 +127,31 @@ def create_schema(client):
 
     print("Schema created successfully!")
 
+
 def extract_polygon_coords(geometry):
     """
     Extract polygon coordinates from GeoJSON geometry.
-    Returns list of rings, each ring is list of (lon, lat) tuples.
-    Handles both Polygon and MultiPolygon types.
+    Returns list of rings, each ring is list of [lon, lat] pairs.
     For MultiPolygon, takes the largest polygon by point count.
     """
     geom_type = geometry.get('type')
     coords = geometry.get('coordinates', [])
 
     if geom_type == 'Polygon':
-        # Polygon: coordinates is array of rings
-        # Each ring is array of [lon, lat] points
         rings = []
         for ring in coords:
-            ring_coords = [(float(pt[0]), float(pt[1])) for pt in ring]
+            ring_coords = [[float(pt[0]), float(pt[1])] for pt in ring]
             rings.append(ring_coords)
         return rings
 
     elif geom_type == 'MultiPolygon':
-        # MultiPolygon: find the largest polygon by point count in outer ring
         if coords:
             largest_polygon = None
             largest_point_count = 0
 
             for polygon in coords:
                 if polygon and polygon[0]:
-                    point_count = len(polygon[0])  # Count points in outer ring
+                    point_count = len(polygon[0])
                     if point_count > largest_point_count:
                         largest_point_count = point_count
                         largest_polygon = polygon
@@ -123,11 +159,12 @@ def extract_polygon_coords(geometry):
             if largest_polygon:
                 rings = []
                 for ring in largest_polygon:
-                    ring_coords = [(float(pt[0]), float(pt[1])) for pt in ring]
+                    ring_coords = [[float(pt[0]), float(pt[1])] for pt in ring]
                     rings.append(ring_coords)
                 return rings
 
     return []
+
 
 def compute_bbox(polygon_rings):
     """Compute bounding box from polygon rings."""
@@ -149,8 +186,9 @@ def render_progress_bar(current, total, width=30, label=''):
     percent = int((current / total) * 100) if total > 0 else 0
     filled = int((current / total) * width) if total > 0 else 0
     empty = width - filled
-    bar = '█' * filled + '░' * empty
+    bar = '=' * filled + '-' * empty
     return f"  [{bar}] {percent}% ({current}/{total}) {label}"
+
 
 def load_geojson_file(client, filepath, expected_admin_level):
     """Load a single GeoJSON file into ClickHouse."""
@@ -170,7 +208,6 @@ def load_geojson_file(client, filepath, expected_admin_level):
     total = len(features)
     print(f"  Processing {total} features...")
 
-    # Prepare batch insert
     rows = []
     skipped = 0
     inserted = 0
@@ -181,38 +218,34 @@ def load_geojson_file(client, filepath, expected_admin_level):
 
         region_id = props.get('region_id') or ''
         admin_level = props.get('admin_level') or expected_admin_level
-        name = props.get('name') or ''  # Handle None
+        name = props.get('name') or ''
         country_code = props.get('country_code') or ''
         original_id = props.get('original_id') or ''
 
-        # Extract polygon coordinates
         polygon_rings = extract_polygon_coords(geometry)
 
         if not polygon_rings or not polygon_rings[0]:
             skipped += 1
             continue
 
-        # Compute bounding box
         bbox = compute_bbox(polygon_rings)
 
-        rows.append((
-            region_id,
-            admin_level,
-            name,
-            country_code,
-            original_id,
-            polygon_rings,
-            bbox[0], bbox[1], bbox[2], bbox[3]
-        ))
+        rows.append({
+            'region_id': region_id,
+            'admin_level': admin_level,
+            'name': name,
+            'country_code': country_code,
+            'original_id': original_id,
+            'polygon': polygon_rings,
+            'bbox_min_lon': bbox[0],
+            'bbox_max_lon': bbox[1],
+            'bbox_min_lat': bbox[2],
+            'bbox_max_lat': bbox[3],
+        })
 
         # Insert in batches of 1000
         if len(rows) >= 1000:
-            client.insert(
-                'wesense_respiro.region_boundaries',
-                rows,
-                column_names=['region_id', 'admin_level', 'name', 'country_code', 'original_id',
-                              'polygon', 'bbox_min_lon', 'bbox_max_lon', 'bbox_min_lat', 'bbox_max_lat']
-            )
+            client.insert_json('wesense_respiro.region_boundaries', rows)
             inserted += len(rows)
             rows = []
 
@@ -223,12 +256,7 @@ def load_geojson_file(client, filepath, expected_admin_level):
 
     # Insert remaining rows
     if rows:
-        client.insert(
-            'wesense_respiro.region_boundaries',
-            rows,
-            column_names=['region_id', 'admin_level', 'name', 'country_code', 'original_id',
-                          'polygon', 'bbox_min_lon', 'bbox_max_lon', 'bbox_min_lat', 'bbox_max_lat']
-        )
+        client.insert_json('wesense_respiro.region_boundaries', rows)
         inserted += len(rows)
 
     sys.stdout.write('\r' + render_progress_bar(total, total, label='Complete') + '   \n')
@@ -237,16 +265,16 @@ def load_geojson_file(client, filepath, expected_admin_level):
     print(f"  Loaded {total - skipped} features, skipped {skipped}")
     return total - skipped
 
+
 def update_device_region_cache_schema(client):
     """Add ADM3/ADM4 columns to device_region_cache if they don't exist."""
     print("\nUpdating device_region_cache schema for ADM3/ADM4...")
 
-    # Check if columns already exist
-    result = client.query('''
+    rows = client.query_rows('''
         SELECT name FROM system.columns
         WHERE database = 'wesense_respiro' AND table = 'device_region_cache'
     ''')
-    existing_columns = {row[0] for row in result.result_rows}
+    existing_columns = {row['name'] for row in rows}
 
     columns_to_add = []
     if 'region_adm3_id' not in existing_columns:
@@ -272,7 +300,7 @@ def verify_data(client):
     """Verify the loaded data."""
     print("\nVerifying loaded data...")
 
-    result = client.query('''
+    rows = client.query_rows('''
         SELECT admin_level, count() as cnt
         FROM wesense_respiro.region_boundaries
         GROUP BY admin_level
@@ -280,30 +308,29 @@ def verify_data(client):
     ''')
 
     print("Counts by admin level:")
-    for row in result.result_rows:
-        print(f"  ADM{row[0]}: {row[1]} regions")
+    for row in rows:
+        print(f"  ADM{row['admin_level']}: {row['cnt']} regions")
 
-    # Test a sample query
     print("\nSample NZ regions:")
-    result = client.query('''
+    rows = client.query_rows('''
         SELECT region_id, name, country_code
         FROM wesense_respiro.region_boundaries
         WHERE country_code = 'NZL' AND admin_level = 2
         LIMIT 5
     ''')
-    for row in result.result_rows:
-        print(f"  {row[0]}: {row[1]} ({row[2]})")
+    for row in rows:
+        print(f"  {row['region_id']}: {row['name']} ({row['country_code']})")
 
-    # Test pointInPolygon for Auckland
     print("\nTesting pointInPolygon for Auckland (174.763, -36.848)...")
-    result = client.query('''
+    rows = client.query_rows('''
         SELECT region_id, name, admin_level
         FROM wesense_respiro.region_boundaries
         WHERE pointInPolygon((174.763, -36.848), polygon[1])
         LIMIT 5
     ''')
-    for row in result.result_rows:
-        print(f"  ADM{row[2]}: {row[0]} - {row[1]}")
+    for row in rows:
+        print(f"  ADM{row['admin_level']}: {row['region_id']} - {row['name']}")
+
 
 def main():
     """Main entry point."""
@@ -320,18 +347,12 @@ def main():
             loaded = load_geojson_file(client, filepath, admin_level)
             total_loaded += loaded
 
-        # Update device_region_cache schema for ADM3/ADM4
         update_device_region_cache_schema(client)
-
         verify_data(client)
 
         print("\n" + "=" * 60)
         print(f"Successfully loaded {total_loaded} total regions!")
         print("=" * 60)
-        print("\nNOTE: After loading new ADM levels, you should:")
-        print("  1. Clear the device_region_cache to re-compute ADM3/ADM4 assignments")
-        print("  2. Restart the server to trigger cache refresh")
-        print("  3. Regenerate PMTiles with the new layers (see tippecanoe command)")
 
     except Exception as e:
         print(f"\nERROR: {e}")
