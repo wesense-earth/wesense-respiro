@@ -59,5 +59,4 @@ venv/
 .DS_Store
 Thumbs.db
 .claude/
-tools/
 start.sh
