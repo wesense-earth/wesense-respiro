@@ -30,7 +30,7 @@ FROM node:20-slim
 
 # Runtime libraries needed by tippecanoe + tools for boundary setup
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libsqlite3-0 python3 curl \
+    libsqlite3-0 python3 curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy tool binaries from builder stages
