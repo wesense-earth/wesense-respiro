@@ -31,9 +31,12 @@ FROM node:20-slim
 # Runtime libraries needed by tippecanoe + tools for boundary setup
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libsqlite3-0 \
-    python3 python3-pip curl bash \
-    && pip3 install --no-cache-dir --break-system-packages clickhouse-connect \
+    python3 python3-venv curl bash \
+    && python3 -m venv /opt/venv \
+    && /opt/venv/bin/pip install --no-cache-dir clickhouse-connect \
     && rm -rf /var/lib/apt/lists/*
+
+ENV PATH="/opt/venv/bin:$PATH"
 
 # Copy tool binaries from builder stages
 COPY --from=tippecanoe-builder /tmp/tippecanoe/tippecanoe /usr/local/bin/tippecanoe
