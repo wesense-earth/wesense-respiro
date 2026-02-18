@@ -69,4 +69,3 @@ jobs:
           cut-off: 7 days ago UTC
           keep-n-most-recent: 3
           tag-selection: both
-          account-type: org
