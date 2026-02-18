@@ -198,13 +198,16 @@ echo ""
 echo "[5/5] Clearing device region cache..."
 source "$PROJECT_DIR/.env" 2>/dev/null || true
 
-# Try to clear the cache
-if curl -s "http://${CLICKHOUSE_USERNAME:-default}:${CLICKHOUSE_PASSWORD}@${CLICKHOUSE_HOST:-localhost}:${CLICKHOUSE_PORT:-8123}" \
-    --data "TRUNCATE TABLE wesense_respiro.device_region_cache" 2>/dev/null; then
-    echo "  ✓ Cache cleared - will be rebuilt on server restart"
-else
-    echo "  Note: Could not clear cache (ClickHouse may not be running)"
+# Try to clear the cache (use DELETE instead of TRUNCATE — app user lacks TRUNCATE privilege)
+CACHE_RESPONSE=$(curl -s "http://${CLICKHOUSE_USERNAME:-default}:${CLICKHOUSE_PASSWORD}@${CLICKHOUSE_HOST:-localhost}:${CLICKHOUSE_PORT:-8123}" \
+    --data "ALTER TABLE wesense_respiro.device_region_cache DELETE WHERE 1" 2>/dev/null) || CACHE_RESPONSE="connection_failed"
+if echo "$CACHE_RESPONSE" | grep -qi "exception\|error"; then
+    echo "  Note: Could not clear cache ($CACHE_RESPONSE)"
     echo "  The cache will be rebuilt automatically when the server starts"
+elif [ "$CACHE_RESPONSE" = "connection_failed" ]; then
+    echo "  Note: Could not connect to ClickHouse — cache will rebuild on next start"
+else
+    echo "  ✓ Cache cleared - will be rebuilt on server restart"
 fi
 
 echo ""
