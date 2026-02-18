@@ -140,11 +140,26 @@ if ! command -v tippecanoe &> /dev/null; then
     echo "    --minimum-zoom=0 --maximum-zoom=14 --simplification=10 \\"
     echo "    --drop-densest-as-needed --extend-zooms-if-still-dropping --force"
 else
-    # Check which processed files exist
+    # Check which processed files exist AND are valid GeoJSON
     LAYERS=""
     for level in 0 1 2 3 4; do
         if [ -f "processed_adm${level}.geojson" ]; then
-            LAYERS="$LAYERS --layer=adm${level} --named-layer=adm${level}:processed_adm${level}.geojson"
+            # Quick structural validation: must contain FeatureCollection and end with ]}
+            if python3 -c "
+import sys
+f = open(sys.argv[1], 'rb')
+head = f.read(200)
+f.seek(max(0, f.seek(0,2) - 20))
+tail = f.read()
+f.close()
+valid = b'FeatureCollection' in head and tail.rstrip().endswith(b']}')
+sys.exit(0 if valid else 1)
+" "processed_adm${level}.geojson" 2>/dev/null; then
+                LAYERS="$LAYERS --layer=adm${level} --named-layer=adm${level}:processed_adm${level}.geojson"
+            else
+                echo "  WARNING: processed_adm${level}.geojson is corrupt, skipping ADM${level}"
+                rm -f "processed_adm${level}.geojson"
+            fi
         else
             echo "  Note: processed_adm${level}.geojson not found, skipping ADM${level}"
         fi

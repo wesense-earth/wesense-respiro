@@ -18,6 +18,7 @@ Output:
     data/boundaries/processed_adm4.geojson     (merged+processed, streamed)
 """
 
+import gc
 import json
 import os
 import sys
@@ -236,13 +237,58 @@ def process_feature(feature, adm_level):
     return feature
 
 
+def iter_features_from_file(filepath):
+    """
+    Memory-efficient feature iterator for GeoJSON files.
+
+    Reads the file as a string (~1 byte/char) instead of json.load() which builds
+    a full Python object tree (~4-8x more memory). Uses raw_decode to parse one
+    feature at a time from the string.
+    """
+    with open(filepath, 'r', encoding='utf-8') as f:
+        content = f.read()
+
+    decoder = json.JSONDecoder()
+
+    # Find the start of the features array
+    idx = content.find('"features"')
+    if idx == -1:
+        return
+    idx = content.find('[', idx)
+    if idx == -1:
+        return
+    idx += 1  # skip the opening [
+
+    while idx < len(content):
+        # Skip whitespace and commas
+        while idx < len(content) and content[idx] in ' \t\n\r,':
+            idx += 1
+        if idx >= len(content) or content[idx] == ']':
+            break
+        try:
+            feature, next_idx = decoder.raw_decode(content, idx)
+            idx = next_idx
+            yield feature
+        except json.JSONDecodeError:
+            break
+
+    # Explicitly free the string buffer
+    del content
+
+
 def stream_merge_and_process(adm_level):
     """
     Merge and process all downloaded country files into a single GeoJSON.
-    Streams one country at a time — never holds all features in memory.
+
+    Memory-efficient: reads each country file as a string and parses features
+    one at a time with raw_decode (avoids json.load() which uses 4-8x more RAM).
+
+    Writes to a .tmp file and validates before renaming, so a crash or OOM-kill
+    never leaves a corrupt output file.
     """
     input_dir = BOUNDARIES_DIR / f"downloaded_adm{adm_level}"
     output_path = BOUNDARIES_DIR / f"processed_adm{adm_level}.geojson"
+    tmp_path = BOUNDARIES_DIR / f"processed_adm{adm_level}.geojson.tmp"
 
     if not input_dir.exists():
         print(f"No downloaded files for ADM{adm_level}")
@@ -255,55 +301,91 @@ def stream_merge_and_process(adm_level):
         print(f"No GeoJSON files found for ADM{adm_level}")
         return None
 
+    # Skip if valid output already exists
+    if output_path.exists():
+        if _validate_geojson_file(output_path):
+            print(f"\n  {output_path.name} already exists and is valid, skipping merge")
+            return output_path
+        else:
+            print(f"\n  {output_path.name} exists but is corrupt, regenerating...")
+            output_path.unlink()
+
+    # Clean up any leftover temp file from a previous crash
+    if tmp_path.exists():
+        tmp_path.unlink()
+
     print(f"\nMerging and processing ADM{adm_level} ({total_files} countries, streaming)...")
 
     total_features = 0
     first_feature = True
 
-    with open(output_path, 'w', encoding='utf-8') as out:
-        out.write('{"type":"FeatureCollection","features":[\n')
+    try:
+        with open(tmp_path, 'w', encoding='utf-8') as out:
+            out.write('{"type":"FeatureCollection","features":[\n')
 
-        for file_idx, filepath in enumerate(files):
-            iso = filepath.stem.split('_')[0]
+            for file_idx, filepath in enumerate(files):
+                iso = filepath.stem.split('_')[0]
 
-            try:
-                with open(filepath, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
+                try:
+                    for feature in iter_features_from_file(filepath):
+                        if 'properties' not in feature:
+                            feature['properties'] = {}
+                        feature['properties']['_source_iso'] = iso
 
-                features = data.get('features', [])
+                        feature = process_feature(feature, adm_level)
 
-                for feature in features:
-                    if 'properties' not in feature:
-                        feature['properties'] = {}
-                    feature['properties']['_source_iso'] = iso
+                        if not first_feature:
+                            out.write(',\n')
+                        json.dump(feature, out, ensure_ascii=False)
+                        first_feature = False
+                        total_features += 1
 
-                    feature = process_feature(feature, adm_level)
+                    # Force garbage collection after each country
+                    gc.collect()
 
-                    if not first_feature:
-                        out.write(',\n')
-                    json.dump(feature, out, ensure_ascii=False)
-                    first_feature = False
-                    total_features += 1
+                except Exception as e:
+                    sys.stdout.write('\r' + ' ' * 80 + '\r')
+                    print(f"  Error processing {filepath.name}: {e}")
 
-                # Free memory after each country
-                del data, features
+                sys.stdout.write('\r' + render_progress_bar(file_idx + 1, total_files, label=f"{iso} ({total_features} features)") + '   ')
+                sys.stdout.flush()
 
-            except Exception as e:
-                sys.stdout.write('\r' + ' ' * 80 + '\r')
-                print(f"  Error processing {filepath.name}: {e}")
+            out.write('\n]}')
 
-            sys.stdout.write('\r' + render_progress_bar(file_idx + 1, total_files, label=f"{iso} ({total_features} features)") + '   ')
-            sys.stdout.flush()
+        sys.stdout.write('\r' + render_progress_bar(total_files, total_files, label=f'Complete ({total_features} features)') + '   \n')
+        sys.stdout.flush()
 
-        out.write('\n]}')
+        # Validate the temp file before renaming
+        if _validate_geojson_file(tmp_path):
+            tmp_path.rename(output_path)
+            file_size_mb = output_path.stat().st_size / (1024 * 1024)
+            print(f"  Created {output_path.name} ({file_size_mb:.1f} MB, {total_features} features)")
+            return output_path
+        else:
+            print(f"  ERROR: Generated file failed validation, removing")
+            tmp_path.unlink()
+            return None
 
-    sys.stdout.write('\r' + render_progress_bar(total_files, total_files, label=f'Complete ({total_features} features)') + '   \n')
-    sys.stdout.flush()
+    except Exception:
+        # Clean up temp file on any error (including MemoryError)
+        if tmp_path.exists():
+            tmp_path.unlink()
+        raise
 
-    file_size_mb = output_path.stat().st_size / (1024 * 1024)
-    print(f"  Created {output_path.name} ({file_size_mb:.1f} MB, {total_features} features)")
 
-    return output_path
+def _validate_geojson_file(filepath):
+    """Quick structural validation without loading the whole file into memory."""
+    try:
+        size = filepath.stat().st_size
+        if size < 50:  # Too small to be valid
+            return False
+        with open(filepath, 'rb') as f:
+            head = f.read(200)
+            f.seek(max(0, size - 20))
+            tail = f.read()
+        return b'FeatureCollection' in head and tail.rstrip().endswith(b']}')
+    except Exception:
+        return False
 
 
 def main():
