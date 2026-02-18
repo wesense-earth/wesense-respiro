@@ -57,21 +57,19 @@ download_cgaz() {
     return 1
 }
 
-# Check if processed files exist (skip download if so)
-NEED_CGAZ=false
+# Check if we need to download CGAZ raw files
+NEED_DOWNLOAD=false
 for level in 0 1 2; do
-    if [ ! -f "processed_adm${level}.geojson" ] && [ ! -f "CGAZ_ADM${level}.geojson" ]; then
-        NEED_CGAZ=true
+    if [ ! -f "CGAZ_ADM${level}.geojson" ]; then
+        NEED_DOWNLOAD=true
         break
     fi
 done
 
-if [ "$NEED_CGAZ" = true ]; then
+if [ "$NEED_DOWNLOAD" = true ]; then
     echo "  Downloading CGAZ data (this may take a few minutes)..."
-
-    # Download each level
     for level in 0 1 2; do
-        if [ ! -f "CGAZ_ADM${level}.geojson" ] && [ ! -f "processed_adm${level}.geojson" ]; then
+        if [ ! -f "CGAZ_ADM${level}.geojson" ]; then
             download_cgaz $level || {
                 echo ""
                 echo "ERROR: Could not download CGAZ ADM${level} data."
@@ -80,12 +78,22 @@ if [ "$NEED_CGAZ" = true ]; then
             }
         fi
     done
+else
+    echo "  ✓ CGAZ raw files already downloaded"
+fi
 
-    # Process CGAZ files
-    echo ""
+# Check if processed files need to be (re)generated from CGAZ
+NEED_PROCESS=false
+for level in 0 1 2; do
+    if [ ! -f "processed_adm${level}.geojson" ]; then
+        NEED_PROCESS=true
+        break
+    fi
+done
+
+if [ "$NEED_PROCESS" = true ]; then
     echo "  Processing CGAZ files..."
     python3 "$SCRIPT_DIR/../data/boundaries/process_cgaz.py" || {
-        # If process_cgaz.py doesn't exist in that location, try the tools dir
         if [ -f "$SCRIPT_DIR/process_cgaz.py" ]; then
             python3 "$SCRIPT_DIR/process_cgaz.py"
         else
@@ -93,7 +101,7 @@ if [ "$NEED_CGAZ" = true ]; then
         fi
     }
 else
-    echo "  ✓ ADM0/1/2 data already exists"
+    echo "  ✓ ADM0/1/2 processed files already exist"
 fi
 
 # ============================================

@@ -1919,7 +1919,6 @@ function generatePMTiles(pmtilesPath, boundariesDir, skipTippecanoe = false) {
             const child = spawn('tippecanoe', [
                 '-o', mbtilesPath,
                 ...layers,
-                '--read-parallel',
                 '--minimum-zoom=0',
                 '--maximum-zoom=10',
                 '--simplification=10',
