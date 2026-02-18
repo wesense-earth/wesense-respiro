@@ -1569,9 +1569,10 @@ app.get('/api/stats/zenoh', async (req, res) => {
 // Requires /var/run/docker.sock mounted read-only into the container.
 // =============================================================================
 const DOCKER_STATS_ENABLED = process.env.DOCKER_STATS_ENABLED === 'true';
+const DOCKER_STATS_CONTAINER_PREFIX = process.env.DOCKER_STATS_CONTAINER_PREFIX || '';
 
 if (DOCKER_STATS_ENABLED) {
-    console.log('Docker container stats enabled');
+    console.log('Docker container stats enabled' + (DOCKER_STATS_CONTAINER_PREFIX ? ` (filter: ${DOCKER_STATS_CONTAINER_PREFIX}*)` : ''));
 }
 
 /**
@@ -1621,8 +1622,14 @@ app.get('/api/stats/containers', async (req, res) => {
     }
 
     try {
-        // List running containers
-        const containers = await dockerApiRequest('/containers/json');
+        // List running containers, optionally filtered by name prefix
+        let containers = await dockerApiRequest('/containers/json');
+        if (DOCKER_STATS_CONTAINER_PREFIX) {
+            containers = containers.filter(c => {
+                const name = (c.Names[0] || '').replace(/^\//, '');
+                return name.startsWith(DOCKER_STATS_CONTAINER_PREFIX);
+            });
+        }
 
         // Fetch stats for all containers in parallel
         const statsPromises = containers.map(async (container) => {
