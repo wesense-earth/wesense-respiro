@@ -1901,10 +1901,9 @@ function generatePMTiles(pmtilesPath, boundariesDir, skipTippecanoe = false) {
                 ...layers,
                 '--read-parallel',
                 '--minimum-zoom=0',
-                '--maximum-zoom=14',
+                '--maximum-zoom=10',
                 '--simplification=10',
                 '--drop-densest-as-needed',
-                '--extend-zooms-if-still-dropping',
                 '--force'
             ], { cwd: boundariesDir });
 

@@ -155,10 +155,9 @@ else
         tippecanoe -o regions.pmtiles \
             $LAYERS \
             --minimum-zoom=0 \
-            --maximum-zoom=14 \
+            --maximum-zoom=10 \
             --simplification=10 \
             --drop-densest-as-needed \
-            --extend-zooms-if-still-dropping \
             --force
 
         # Copy to public folder
