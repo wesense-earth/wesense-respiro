@@ -179,8 +179,51 @@ def render_progress_bar(current, total, width=30, label=''):
     return f"  [{bar}] {percent}% ({current}/{total}) {label}"
 
 
+def iter_geojson_features(filepath):
+    """
+    Memory-efficient feature iterator for GeoJSON files.
+
+    Small files (< 500 MB): uses json.load() — works with any JSON layout
+    including the compact single-line format from process_cgaz.py.
+
+    Large files (>= 500 MB): reads line by line assuming one feature per line,
+    as written by download_adm3_adm4.py's stream_merge_and_process(). Uses
+    only a few MB of RAM regardless of file size.
+    """
+    file_size = os.path.getsize(filepath)
+
+    if file_size < 500 * 1024 * 1024:
+        # Small files: safe to load entirely
+        with open(filepath, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        for feature in data.get('features', []):
+            yield feature
+        del data
+        return
+
+    # Large files: line-by-line streaming (one feature per line format)
+    with open(filepath, 'r', encoding='utf-8') as f:
+        in_features = False
+        for line in f:
+            stripped = line.strip().rstrip(',')
+            if not in_features:
+                if '"features"' in line:
+                    in_features = True
+                continue
+
+            # Skip empty lines, array close
+            if not stripped or stripped == ']}' or stripped == ']':
+                continue
+
+            if stripped[0] == '{':
+                try:
+                    yield json.loads(stripped)
+                except json.JSONDecodeError:
+                    pass
+
+
 def load_geojson_file(client, filepath, expected_admin_level):
-    """Load a single GeoJSON file into ClickHouse."""
+    """Load a single GeoJSON file into ClickHouse using streaming parser."""
     base_path = get_base_path()
     full_path = os.path.join(base_path, filepath)
 
@@ -190,18 +233,16 @@ def load_geojson_file(client, filepath, expected_admin_level):
         print(f"  WARNING: File not found: {full_path}")
         return 0
 
-    with open(full_path, 'r') as f:
-        data = json.load(f)
-
-    features = data.get('features', [])
-    total = len(features)
-    print(f"  Processing {total} features...")
+    file_size_mb = os.path.getsize(full_path) / (1024 * 1024)
+    print(f"  Streaming {file_size_mb:.0f} MB file...")
 
     rows = []
     skipped = 0
     inserted = 0
+    count = 0
 
-    for i, feature in enumerate(features):
+    for feature in iter_geojson_features(full_path):
+        count += 1
         props = feature.get('properties', {})
         geometry = feature.get('geometry', {})
 
@@ -238,9 +279,9 @@ def load_geojson_file(client, filepath, expected_admin_level):
             inserted += len(rows)
             rows = []
 
-        # Update progress bar
-        if (i + 1) % 500 == 0 or i == total - 1:
-            sys.stdout.write('\r' + render_progress_bar(i + 1, total, label=f'{inserted + len(rows)} inserted') + '   ')
+        # Update progress
+        if count % 500 == 0:
+            sys.stdout.write(f'\r  {inserted + len(rows)} inserted ({count} processed, {skipped} skipped)   ')
             sys.stdout.flush()
 
     # Insert remaining rows
@@ -248,11 +289,8 @@ def load_geojson_file(client, filepath, expected_admin_level):
         client.insert_json('wesense_respiro.region_boundaries', rows)
         inserted += len(rows)
 
-    sys.stdout.write('\r' + render_progress_bar(total, total, label='Complete') + '   \n')
-    sys.stdout.flush()
-
-    print(f"  Loaded {total - skipped} features, skipped {skipped}")
-    return total - skipped
+    print(f"\n  Loaded {inserted} features, skipped {skipped} (from {count} total)")
+    return inserted
 
 
 def verify_data(client):
