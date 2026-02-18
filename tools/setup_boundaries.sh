@@ -93,13 +93,13 @@ done
 
 if [ "$NEED_PROCESS" = true ]; then
     echo "  Processing CGAZ files..."
-    python3 "$SCRIPT_DIR/../data/boundaries/process_cgaz.py" || {
-        if [ -f "$SCRIPT_DIR/process_cgaz.py" ]; then
-            python3 "$SCRIPT_DIR/process_cgaz.py"
-        else
-            echo "  WARNING: process_cgaz.py not found, skipping processing"
-        fi
-    }
+    if [ -f "$SCRIPT_DIR/process_cgaz.py" ]; then
+        python3 "$SCRIPT_DIR/process_cgaz.py"
+    elif [ -f "$SCRIPT_DIR/../data/boundaries/process_cgaz.py" ]; then
+        python3 "$SCRIPT_DIR/../data/boundaries/process_cgaz.py"
+    else
+        echo "  WARNING: process_cgaz.py not found, skipping processing"
+    fi
 else
     echo "  ✓ ADM0/1/2 processed files already exist"
 fi
