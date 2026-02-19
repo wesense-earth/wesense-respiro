@@ -10989,15 +10989,11 @@ class Respiro {
         const peersEl = document.getElementById('statsPeers');
         const peersSubEl = document.getElementById('statsPeersSub');
         if (orbitdb && orbitdb.peer_count != null) {
-            // Count unique peers across gossipsub topics (actual WeSense peers)
-            // rather than raw libp2p swarm count (includes IPFS DHT bootstrap nodes)
-            const gossipPeers = new Set();
-            if (orbitdb.gossipsub_topics) {
-                for (const subs of Object.values(orbitdb.gossipsub_topics)) {
-                    if (Array.isArray(subs)) subs.forEach(p => gossipPeers.add(p));
-                }
-            }
-            peersEl.textContent = gossipPeers.size > 0 ? gossipPeers.size : orbitdb.peer_count;
+            // Use OrbitDB node registry count (actual registered WeSense nodes)
+            // rather than gossipsub/libp2p swarm counts which include
+            // IPFS bootstrap and relay nodes
+            const registeredNodes = orbitdb.db_sizes?.nodes || 0;
+            peersEl.textContent = registeredNodes > 0 ? registeredNodes : orbitdb.peer_count;
             peersSubEl.textContent = 'connected';
         } else if (orbitdb && orbitdb.status === 'not_configured') {
             peersEl.textContent = '--';

@@ -23,8 +23,11 @@ const MIN_SWARM_SIZE = 5;
 // Only sensors reporting within these thresholds are considered "active" for swarm membership
 const FRESHNESS_THRESHOLDS = {
     'WESENSE': 10 * 60 * 1000,              // 10 minutes
+    'CHIRPSTACK': 10 * 60 * 1000,           // 10 minutes (self-hosted LoRaWAN)
+    'TTN': 10 * 60 * 1000,                  // 10 minutes (TTN LoRaWAN)
     'MESHTASTIC_PUBLIC': 61 * 60 * 1000,    // 61 minutes
     'MESHTASTIC_COMMUNITY': 61 * 60 * 1000, // 61 minutes
+    'MESHTASTIC_DOWNLINK': 61 * 60 * 1000,  // 61 minutes
     'default': 10 * 60 * 1000               // Conservative default
 };
 
