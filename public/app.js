@@ -10973,7 +10973,7 @@ class Respiro {
             const co = contribution.status === 'fulfilled' ? contribution.value : {};
             const ct = containers.status === 'fulfilled' ? containers.value : {};
 
-            this.renderUserStats(ov, ob, ze);
+            this.renderUserStats(ov, ob, ze, no);
             this.renderContribution(co, no);
             this.renderContainerStats(ct);
             this.renderDebugStats(ob, ze, no, tr, ov);
@@ -10984,16 +10984,20 @@ class Respiro {
         }
     }
 
-    renderUserStats(overview, orbitdb, zenoh) {
+    renderUserStats(overview, orbitdb, zenoh, nodesData) {
         // Hero: P2P Peers
         const peersEl = document.getElementById('statsPeers');
         const peersSubEl = document.getElementById('statsPeersSub');
         if (orbitdb && orbitdb.peer_count != null) {
-            // Use OrbitDB node registry count (actual registered WeSense nodes)
-            // rather than gossipsub/libp2p swarm counts which include
-            // IPFS bootstrap and relay nodes
-            const registeredNodes = orbitdb.db_sizes?.nodes || 0;
-            peersEl.textContent = registeredNodes > 0 ? registeredNodes : orbitdb.peer_count;
+            // Count nodes from the registry that have checked in within
+            // 2x the sync interval (default 3600s), filtering out stale entries
+            const nodeList = nodesData?.nodes || [];
+            const now = Date.now();
+            const staleCutoff = 2 * 60 * 60 * 1000; // 2 hours
+            const activeNodes = nodeList.filter(n =>
+                n.updated_at && (now - new Date(n.updated_at).getTime()) < staleCutoff
+            );
+            peersEl.textContent = activeNodes.length;
             peersSubEl.textContent = 'connected';
         } else if (orbitdb && orbitdb.status === 'not_configured') {
             peersEl.textContent = '--';
