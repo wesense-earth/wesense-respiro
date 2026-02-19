@@ -10866,9 +10866,17 @@ class Respiro {
             'MESHTASTIC': 'Meshtastic',
             'MESHTASTIC_PUBLIC': 'Meshtastic Public',
             'MESHTASTIC_COMMUNITY': 'Meshtastic Community',
+            'MESHTASTIC_DOWNLINK': 'Meshtastic Downlink',
             'WESENSE': 'WeSense',
+            'TTN': 'WeSense TTN',
+            'CHIRPSTACK': 'WeSense ChirpStack',
+            'HOMEASSISTANT': 'Home Assistant',
             'meshtastic-public': 'Meshtastic Public',
-            'meshtastic-community': 'Meshtastic Community'
+            'meshtastic-community': 'Meshtastic Community',
+            'meshtastic-downlink': 'Meshtastic Downlink',
+            'ttn': 'WeSense TTN',
+            'chirpstack': 'WeSense ChirpStack',
+            'homeassistant': 'Home Assistant'
         };
         return map[source] || source;
     }
