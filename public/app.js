@@ -2,6 +2,8 @@
 // WESENSE sensors report every 5 minutes, Meshtastic sensors report every 30-60 minutes
 const FRESHNESS_THRESHOLDS = {
     'WESENSE': 10 * 60 * 1000,              // 10 minutes
+    'CHIRPSTACK': 10 * 60 * 1000,           // 10 minutes (self-hosted LoRaWAN via ChirpStack)
+    'TTN': 10 * 60 * 1000,                  // 10 minutes (same hardware as WiFi, via LoRaWAN)
     'MESHTASTIC_PUBLIC': 61 * 60 * 1000,    // 61 minutes (catches 60-min reporters)
     'MESHTASTIC_COMMUNITY': 61 * 60 * 1000, // 61 minutes
     'MESHTASTIC_DOWNLINK': 61 * 60 * 1000,  // 61 minutes
@@ -11034,13 +11036,15 @@ class Respiro {
         if (overview.data_sources && Object.keys(overview.data_sources).length > 0) {
             const sourceNames = {
                 'WESENSE': 'WeSense WiFi',
+                'CHIRPSTACK': 'WeSense ChirpStack',
                 'MESHTASTIC_DOWNLINK': 'Meshtastic Downlink',
                 'MESHTASTIC_COMMUNITY': 'Meshtastic Community',
                 'HOMEASSISTANT': 'Home Assistant',
-                'TTN': 'TTN LoRaWAN'
+                'TTN': 'WeSense TTN'
             };
             const sourceDotClass = {
                 'WESENSE': 'wesense',
+                'CHIRPSTACK': 'chirpstack',
                 'MESHTASTIC_DOWNLINK': 'meshtastic-public',
                 'MESHTASTIC_COMMUNITY': 'meshtastic-community',
                 'HOMEASSISTANT': 'homeassistant',
@@ -11137,6 +11141,8 @@ class Respiro {
         // All expected sources — always shown, 0 if inactive
         const allSources = [
             { key: 'WESENSE', name: 'WeSense WiFi', dot: 'wesense' },
+            { key: 'CHIRPSTACK', name: 'WeSense ChirpStack', dot: 'chirpstack' },
+            { key: 'TTN', name: 'WeSense TTN', dot: 'ttn' },
             { key: 'MESHTASTIC_COMMUNITY', name: 'Meshtastic Community', dot: 'meshtastic-community' },
             { key: 'MESHTASTIC_DOWNLINK', name: 'Meshtastic Downlink', dot: 'meshtastic-public' },
             { key: 'HOMEASSISTANT', name: 'Home Assistant', dot: 'homeassistant' },
