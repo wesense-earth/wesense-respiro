@@ -10997,16 +10997,11 @@ class Respiro {
         const peersEl = document.getElementById('statsPeers');
         const peersSubEl = document.getElementById('statsPeersSub');
         if (orbitdb && orbitdb.peer_count != null) {
-            // Count nodes from the registry that have checked in within
-            // 2x the sync interval (default 3600s), filtering out stale entries
-            const nodeList = nodesData?.nodes || [];
-            const now = Date.now();
-            const staleCutoff = 2 * 60 * 60 * 1000; // 2 hours
-            const activeNodes = nodeList.filter(n =>
-                n.updated_at && (now - new Date(n.updated_at).getTime()) < staleCutoff
-            );
-            peersEl.textContent = activeNodes.length;
-            peersSubEl.textContent = 'connected';
+            // Use wesense_peer_count (gossipsub topic subscribers) — these are
+            // actual WeSense stations sharing OrbitDB databases, not IPFS relays.
+            const wesensePeers = orbitdb.wesense_peer_count ?? 0;
+            peersEl.textContent = wesensePeers;
+            peersSubEl.textContent = wesensePeers === 1 ? 'peer' : 'peers';
         } else if (orbitdb && orbitdb.status === 'not_configured') {
             peersEl.textContent = '--';
             peersSubEl.textContent = 'not configured';
@@ -11257,13 +11252,15 @@ class Respiro {
         // P2P Network
         const p2pEl = document.getElementById('debugP2P');
         if (orbitdb && orbitdb.peer_count != null) {
-            const peers = orbitdb.peers || [];
+            const allPeers = orbitdb.peers || [];
+            const wesensePeers = orbitdb.wesense_peers || [];
             const peerId = orbitdb.libp2p_peer_id || '';
             const addrs = orbitdb.addresses || [];
             p2pEl.innerHTML = `
                 ${peerId ? `<div class="stats-mono-row stats-mono">Peer ID: ${this.statsEscapeHtml(peerId)}</div>` : ''}
                 ${addrs.length > 0 ? `<div class="stats-mono-row stats-mono">Listen: ${addrs.map(a => this.statsEscapeHtml(a)).join('<br>')}</div>` : ''}
-                <div class="stats-mono-row stats-mono">Connected Peers: ${peers.length}${peers.length > 0 ? '<br>' + peers.map(p => this.statsEscapeHtml(p)).join('<br>') : ''}</div>
+                <div class="stats-mono-row stats-mono">WeSense Peers: ${wesensePeers.length}${wesensePeers.length > 0 ? '<br>' + wesensePeers.map(p => this.statsEscapeHtml(p)).join('<br>') : ''}</div>
+                <div class="stats-mono-row stats-mono">All libp2p Peers: ${allPeers.length}</div>
             `;
         } else {
             p2pEl.innerHTML = '<div class="stats-empty">OrbitDB not connected</div>';
