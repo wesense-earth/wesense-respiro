@@ -1556,7 +1556,7 @@ app.get('/api/stats/contribution', async (req, res) => {
 app.get('/api/stats/network', async (req, res) => {
     const net = require('net');
 
-    function checkPort(host, port, timeoutMs = 3000) {
+    function checkPort(host, port, timeoutMs = 1500) {
         return new Promise((resolve) => {
             const socket = new net.Socket();
             socket.setTimeout(timeoutMs);

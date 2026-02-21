@@ -10962,38 +10962,37 @@ class Respiro {
         const refreshBtn = document.getElementById('statsRefreshBtn');
         if (refreshBtn) refreshBtn.classList.add('loading');
 
-        try {
-            const [overview, orbitdb, zenoh, nodes, trust, contribution, containers, archives, network] = await Promise.allSettled([
-                fetch('/api/stats/overview').then(r => r.json()),
-                fetch('/api/stats/orbitdb').then(r => r.json()),
-                fetch('/api/stats/zenoh').then(r => r.json()),
-                fetch('/api/stats/nodes').then(r => r.json()),
-                fetch('/api/stats/trust').then(r => r.json()),
-                fetch('/api/stats/contribution').then(r => r.json()),
-                fetch('/api/stats/containers').then(r => r.json()),
-                fetch('/api/stats/archives').then(r => r.json()),
-                fetch('/api/stats/network').then(r => r.json()),
-            ]);
+        // Accumulated results — render progressively as fetches complete
+        const r = { ov: {}, ob: {}, ze: {}, no: {}, tr: {}, co: {}, ct: {}, ar: {}, nw: {} };
+        const renderAll = () => {
+            this.renderUserStats(r.ov, r.ob, r.ze, r.no);
+            this.renderContribution(r.co, r.no);
+            this.renderContainerStats(r.ct);
+            this.renderDebugStats(r.ob, r.ze, r.no, r.tr, r.ov, r.ar, r.nw);
+        };
 
-            const ov = overview.status === 'fulfilled' ? overview.value : {};
-            const ob = orbitdb.status === 'fulfilled' ? orbitdb.value : {};
-            const ze = zenoh.status === 'fulfilled' ? zenoh.value : {};
-            const no = nodes.status === 'fulfilled' ? nodes.value : {};
-            const tr = trust.status === 'fulfilled' ? trust.value : {};
-            const co = contribution.status === 'fulfilled' ? contribution.value : {};
-            const ct = containers.status === 'fulfilled' ? containers.value : {};
-            const ar = archives.status === 'fulfilled' ? archives.value : {};
-            const nw = network.status === 'fulfilled' ? network.value : {};
+        // Helper: fetch, store result, re-render
+        const load = (url, key) => fetch(url)
+            .then(resp => resp.json())
+            .then(data => { r[key] = data; renderAll(); })
+            .catch(() => {});
 
-            this.renderUserStats(ov, ob, ze, no);
-            this.renderContribution(co, no);
-            this.renderContainerStats(ct);
-            this.renderDebugStats(ob, ze, no, tr, ov, ar, nw);
-        } catch (err) {
-            console.error('Failed to load stats:', err);
-        } finally {
+        // Fire all requests in parallel — each re-renders the page as it arrives
+        const all = Promise.all([
+            load('/api/stats/overview', 'ov'),
+            load('/api/stats/orbitdb', 'ob'),
+            load('/api/stats/zenoh', 'ze'),
+            load('/api/stats/nodes', 'no'),
+            load('/api/stats/trust', 'tr'),
+            load('/api/stats/contribution', 'co'),
+            load('/api/stats/containers', 'ct'),
+            load('/api/stats/archives', 'ar'),
+            load('/api/stats/network', 'nw'),
+        ]);
+
+        all.finally(() => {
             if (refreshBtn) refreshBtn.classList.remove('loading');
-        }
+        });
     }
 
     renderUserStats(overview, orbitdb, zenoh, nodesData) {
