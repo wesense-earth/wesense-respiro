@@ -10963,7 +10963,7 @@ class Respiro {
         if (refreshBtn) refreshBtn.classList.add('loading');
 
         try {
-            const [overview, orbitdb, zenoh, nodes, trust, contribution, containers] = await Promise.allSettled([
+            const [overview, orbitdb, zenoh, nodes, trust, contribution, containers, archives] = await Promise.allSettled([
                 fetch('/api/stats/overview').then(r => r.json()),
                 fetch('/api/stats/orbitdb').then(r => r.json()),
                 fetch('/api/stats/zenoh').then(r => r.json()),
@@ -10971,6 +10971,7 @@ class Respiro {
                 fetch('/api/stats/trust').then(r => r.json()),
                 fetch('/api/stats/contribution').then(r => r.json()),
                 fetch('/api/stats/containers').then(r => r.json()),
+                fetch('/api/stats/archives').then(r => r.json()),
             ]);
 
             const ov = overview.status === 'fulfilled' ? overview.value : {};
@@ -10980,11 +10981,12 @@ class Respiro {
             const tr = trust.status === 'fulfilled' ? trust.value : {};
             const co = contribution.status === 'fulfilled' ? contribution.value : {};
             const ct = containers.status === 'fulfilled' ? containers.value : {};
+            const ar = archives.status === 'fulfilled' ? archives.value : {};
 
             this.renderUserStats(ov, ob, ze, no);
             this.renderContribution(co, no);
             this.renderContainerStats(ct);
-            this.renderDebugStats(ob, ze, no, tr, ov);
+            this.renderDebugStats(ob, ze, no, tr, ov, ar);
         } catch (err) {
             console.error('Failed to load stats:', err);
         } finally {
@@ -11248,7 +11250,7 @@ class Respiro {
         return `${val < 10 ? val.toFixed(1) : Math.round(val)} ${units[i]}`;
     }
 
-    renderDebugStats(orbitdb, zenoh, nodes, trust, overview) {
+    renderDebugStats(orbitdb, zenoh, nodes, trust, overview, archives) {
         // P2P Network
         const p2pEl = document.getElementById('debugP2P');
         if (orbitdb && orbitdb.peer_count != null) {
@@ -11325,6 +11327,47 @@ class Respiro {
             }).join('');
         } else {
             nodesEl.innerHTML = '<div class="stats-empty">No registered nodes</div>';
+        }
+
+        // IPFS Archives
+        const ipfsEl = document.getElementById('debugIPFS');
+        if (archives && archives.root_cid) {
+            const rootCid = archives.root_cid;
+            const ipnsName = archives.ipns?.name;
+            const gatewayUrl = `https://ipfs.io/ipfs/${rootCid}`;
+            let rows = `
+                <div class="stats-detail-row">
+                    <span class="stats-detail-label">Root CID</span>
+                    <span class="stats-detail-value stats-mono"><a href="${gatewayUrl}" target="_blank" rel="noopener">${this.statsEscapeHtml(rootCid)}</a></span>
+                </div>
+            `;
+            if (ipnsName) {
+                const ipnsUrl = `https://ipfs.io/ipns/${ipnsName}`;
+                rows += `
+                    <div class="stats-detail-row">
+                        <span class="stats-detail-label">IPNS Name</span>
+                        <span class="stats-detail-value stats-mono"><a href="${ipnsUrl}" target="_blank" rel="noopener">${this.statsEscapeHtml(ipnsName)}</a></span>
+                    </div>
+                `;
+            } else {
+                rows += `
+                    <div class="stats-detail-row">
+                        <span class="stats-detail-label">IPNS Name</span>
+                        <span class="stats-detail-value" style="color:var(--text-muted)">Not published</span>
+                    </div>
+                `;
+            }
+            rows += `
+                <div class="stats-detail-row">
+                    <span class="stats-detail-label">Public Gateway</span>
+                    <span class="stats-detail-value"><a href="${gatewayUrl}" target="_blank" rel="noopener">${this.statsEscapeHtml(gatewayUrl)}</a></span>
+                </div>
+            `;
+            ipfsEl.innerHTML = rows;
+        } else if (archives && archives.status === 'not_configured') {
+            ipfsEl.innerHTML = '<div class="stats-empty">OrbitDB not configured</div>';
+        } else {
+            ipfsEl.innerHTML = '<div class="stats-empty">No archives</div>';
         }
 
         // Background Tasks

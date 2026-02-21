@@ -1528,11 +1528,13 @@ if (ORBITDB_URL) {
     app.get('/api/stats/orbitdb', proxyToOrbitDB('/health'));
     app.get('/api/stats/nodes', proxyToOrbitDB('/nodes'));
     app.get('/api/stats/trust', proxyToOrbitDB('/trust'));
+    app.get('/api/stats/archives', proxyToOrbitDB('/archives/resolve'));
 } else {
     // Return offline status when OrbitDB is not configured
     app.get('/api/stats/orbitdb', (req, res) => res.json({ status: 'not_configured' }));
     app.get('/api/stats/nodes', (req, res) => res.json({ nodes: [] }));
     app.get('/api/stats/trust', (req, res) => res.json({ trust: [] }));
+    app.get('/api/stats/archives', (req, res) => res.json({ status: 'not_configured' }));
 }
 
 // Contribution breakdown (local vs P2P, by data source)
