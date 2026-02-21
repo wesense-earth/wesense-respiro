@@ -1,3 +1,7 @@
+const dns = require('dns');
+// Prefer IPv4 to avoid long IPv6 timeouts in Docker container networks
+dns.setDefaultResultOrder('ipv4first');
+
 const express = require('express');
 const compression = require('compression');
 const path = require('path');
@@ -1515,7 +1519,7 @@ if (ORBITDB_URL) {
                 url.searchParams.set(key, value);
             }
             const response = await fetch(url.toString(), {
-                signal: AbortSignal.timeout(10000),
+                signal: AbortSignal.timeout(30000),
             });
             const data = await response.json();
             res.status(response.status).json(data);
@@ -1758,7 +1762,7 @@ if (ZENOH_API_URL) {
                 url.searchParams.set(key, value);
             }
             const response = await fetch(url.toString(), {
-                signal: AbortSignal.timeout(10000),
+                signal: AbortSignal.timeout(30000),
             });
             const data = await response.json();
             res.status(response.status).json(data);
