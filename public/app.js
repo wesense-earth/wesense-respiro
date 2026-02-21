@@ -10963,7 +10963,7 @@ class Respiro {
         if (refreshBtn) refreshBtn.classList.add('loading');
 
         try {
-            const [overview, orbitdb, zenoh, nodes, trust, contribution, containers, archives] = await Promise.allSettled([
+            const [overview, orbitdb, zenoh, nodes, trust, contribution, containers, archives, network] = await Promise.allSettled([
                 fetch('/api/stats/overview').then(r => r.json()),
                 fetch('/api/stats/orbitdb').then(r => r.json()),
                 fetch('/api/stats/zenoh').then(r => r.json()),
@@ -10972,6 +10972,7 @@ class Respiro {
                 fetch('/api/stats/contribution').then(r => r.json()),
                 fetch('/api/stats/containers').then(r => r.json()),
                 fetch('/api/stats/archives').then(r => r.json()),
+                fetch('/api/stats/network').then(r => r.json()),
             ]);
 
             const ov = overview.status === 'fulfilled' ? overview.value : {};
@@ -10982,11 +10983,12 @@ class Respiro {
             const co = contribution.status === 'fulfilled' ? contribution.value : {};
             const ct = containers.status === 'fulfilled' ? containers.value : {};
             const ar = archives.status === 'fulfilled' ? archives.value : {};
+            const nw = network.status === 'fulfilled' ? network.value : {};
 
             this.renderUserStats(ov, ob, ze, no);
             this.renderContribution(co, no);
             this.renderContainerStats(ct);
-            this.renderDebugStats(ob, ze, no, tr, ov, ar);
+            this.renderDebugStats(ob, ze, no, tr, ov, ar, nw);
         } catch (err) {
             console.error('Failed to load stats:', err);
         } finally {
@@ -11250,7 +11252,7 @@ class Respiro {
         return `${val < 10 ? val.toFixed(1) : Math.round(val)} ${units[i]}`;
     }
 
-    renderDebugStats(orbitdb, zenoh, nodes, trust, overview, archives) {
+    renderDebugStats(orbitdb, zenoh, nodes, trust, overview, archives, network) {
         // P2P Network
         const p2pEl = document.getElementById('debugP2P');
         if (orbitdb && orbitdb.peer_count != null) {
@@ -11327,6 +11329,19 @@ class Respiro {
             }).join('');
         } else {
             nodesEl.innerHTML = '<div class="stats-empty">No registered nodes</div>';
+        }
+
+        // Network Ports
+        const portsEl = document.getElementById('debugNetworkPorts');
+        if (network && network.checks && network.checks.length > 0) {
+            portsEl.innerHTML = network.checks.map(c => {
+                const status = c.reachable ? 'healthy' : 'offline';
+                const label = `${this.statsEscapeHtml(c.name)}`;
+                const detail = `${this.statsEscapeHtml(c.host)}:${c.port}`;
+                return `<div class="stats-health-row"><span class="stats-health-label">${label} <span style="color:var(--text-muted)">${detail}</span></span><span class="health-dot ${status}"></span></div>`;
+            }).join('');
+        } else {
+            portsEl.innerHTML = '<div class="stats-empty">No checks configured</div>';
         }
 
         // IPFS Archives

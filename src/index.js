@@ -1548,6 +1548,64 @@ app.get('/api/stats/contribution', async (req, res) => {
     }
 });
 
+// Network port checks — tests connectivity to each internal service
+app.get('/api/stats/network', async (req, res) => {
+    const net = require('net');
+
+    function checkPort(host, port, timeoutMs = 3000) {
+        return new Promise((resolve) => {
+            const socket = new net.Socket();
+            socket.setTimeout(timeoutMs);
+            socket.on('connect', () => { socket.destroy(); resolve(true); });
+            socket.on('error', () => { socket.destroy(); resolve(false); });
+            socket.on('timeout', () => { socket.destroy(); resolve(false); });
+            socket.connect(port, host);
+        });
+    }
+
+    // Determine which services to check based on env vars
+    const checks = [];
+
+    // ClickHouse
+    const chHost = process.env.CLICKHOUSE_HOST || 'clickhouse';
+    const chPort = parseInt(process.env.CLICKHOUSE_PORT || '8123', 10);
+    checks.push({ name: 'ClickHouse', host: chHost, port: chPort, internal: true });
+
+    // MQTT
+    const mqttUrl = process.env.MQTT_BROKER_URL || '';
+    if (mqttUrl) {
+        try {
+            const u = new URL(mqttUrl);
+            checks.push({ name: 'MQTT (EMQX)', host: u.hostname, port: parseInt(u.port || '1883', 10), internal: true });
+        } catch {}
+    }
+
+    // OrbitDB
+    const orbitUrl = process.env.ORBITDB_URL || '';
+    if (orbitUrl) {
+        try {
+            const u = new URL(orbitUrl);
+            checks.push({ name: 'OrbitDB', host: u.hostname, port: parseInt(u.port || '5200', 10), internal: true });
+        } catch {}
+    }
+
+    // Zenoh API
+    const zenohUrl = process.env.ZENOH_API_URL || '';
+    if (zenohUrl) {
+        try {
+            const u = new URL(zenohUrl);
+            checks.push({ name: 'Zenoh API', host: u.hostname, port: parseInt(u.port || '5100', 10), internal: true });
+        } catch {}
+    }
+
+    const results = await Promise.all(checks.map(async (c) => {
+        const reachable = await checkPort(c.host, c.port);
+        return { name: c.name, host: c.host, port: c.port, reachable, internal: c.internal };
+    }));
+
+    res.json({ checks: results });
+});
+
 // Zenoh health proxy for stats
 app.get('/api/stats/zenoh', async (req, res) => {
     const zenohUrl = process.env.ZENOH_API_URL;
