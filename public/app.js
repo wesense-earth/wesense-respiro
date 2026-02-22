@@ -11589,8 +11589,6 @@ class Respiro {
             } else if (view === 'stats') {
                 document.getElementById('statsView').classList.add('active');
                 this.loadStats();
-                // Auto-refresh every 30 seconds while stats tab is active
-                this._statsInterval = setInterval(() => this.loadStats(), 30000);
             }
         }
     }
