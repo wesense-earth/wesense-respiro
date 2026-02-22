@@ -10229,12 +10229,11 @@ class Respiro {
 
     updateStats() {
         const now = Date.now();
-        const filteredSensors = this.getFilteredSensors();
-        const activeSensors = filteredSensors.length;
+        const activeSensors = this.sensors.length;
 
         // Calculate newest reading time
         let newestTimestamp = null;
-        filteredSensors.forEach(sensor => {
+        this.sensors.forEach(sensor => {
             const lastSeen = this.getLastSeenTime(sensor);
             if (lastSeen) {
                 const ts = new Date(lastSeen).getTime();
@@ -10258,10 +10257,10 @@ class Respiro {
             }
         }
 
-        // Count unique countries from filtered sensors
+        // Count unique countries from all sensors
         const uniqueCountries = new Set();
 
-        filteredSensors.forEach(sensor => {
+        this.sensors.forEach(sensor => {
             if (sensor.country && sensor.country !== 'unknown') {
                 uniqueCountries.add(sensor.country);
             }
@@ -10962,8 +10961,10 @@ class Respiro {
         const refreshBtn = document.getElementById('statsRefreshBtn');
         if (refreshBtn) refreshBtn.classList.add('loading');
 
-        // Accumulated results — render progressively as fetches complete
-        const r = { ov: {}, ob: {}, ze: {}, no: {}, tr: {}, co: {}, ct: {}, ar: {}, nw: {} };
+        // Accumulated results — render progressively as fetches complete.
+        // Preserve previous results so values don't flicker to empty between refreshes.
+        if (!this._statsCache) this._statsCache = { ov: {}, ob: {}, ze: {}, no: {}, tr: {}, co: {}, ct: {}, ar: {}, nw: {} };
+        const r = this._statsCache;
         const renderAll = () => {
             this.renderUserStats(r.ov, r.ob, r.ze, r.no);
             this.renderContribution(r.co, r.no);
