@@ -1508,6 +1508,7 @@ app.get('/api/stats/overview', async (req, res) => {
 
 // OrbitDB proxy endpoints (gated on ORBITDB_URL env var)
 const ORBITDB_URL = process.env.ORBITDB_URL;
+const IPFS_GATEWAY_URL = (process.env.IPFS_GATEWAY_URL || 'https://cloudflare-ipfs.com').replace(/\/+$/, '');
 
 if (ORBITDB_URL) {
     console.log(`OrbitDB proxy enabled → ${ORBITDB_URL}`);
@@ -1532,13 +1533,26 @@ if (ORBITDB_URL) {
     app.get('/api/stats/orbitdb', proxyToOrbitDB('/health'));
     app.get('/api/stats/nodes', proxyToOrbitDB('/nodes'));
     app.get('/api/stats/trust', proxyToOrbitDB('/trust'));
-    app.get('/api/stats/archives', proxyToOrbitDB('/archives/resolve'));
+    app.get('/api/stats/archives', async (req, res) => {
+        try {
+            const url = new URL('/archives/resolve', ORBITDB_URL);
+            const response = await fetch(url.toString(), {
+                signal: AbortSignal.timeout(30000),
+            });
+            const data = await response.json();
+            data.gateway_url = IPFS_GATEWAY_URL;
+            res.status(response.status).json(data);
+        } catch (error) {
+            console.error('OrbitDB proxy error (/archives/resolve):', error.message);
+            res.status(502).json({ error: 'OrbitDB unavailable' });
+        }
+    });
 } else {
     // Return offline status when OrbitDB is not configured
     app.get('/api/stats/orbitdb', (req, res) => res.json({ status: 'not_configured' }));
     app.get('/api/stats/nodes', (req, res) => res.json({ nodes: [] }));
     app.get('/api/stats/trust', (req, res) => res.json({ trust: [] }));
-    app.get('/api/stats/archives', (req, res) => res.json({ status: 'not_configured' }));
+    app.get('/api/stats/archives', (req, res) => res.json({ status: 'not_configured', gateway_url: IPFS_GATEWAY_URL }));
 }
 
 // Contribution breakdown (local vs P2P, by data source)
