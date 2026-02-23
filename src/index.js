@@ -1509,6 +1509,7 @@ app.get('/api/stats/overview', async (req, res) => {
 // OrbitDB proxy endpoints (gated on ORBITDB_URL env var)
 const ORBITDB_URL = process.env.ORBITDB_URL;
 const IPFS_GATEWAY_URL = (process.env.IPFS_GATEWAY_URL || 'https://dweb.link').replace(/\/+$/, '');
+const KUBO_API_URL = process.env.KUBO_API_URL;
 
 if (ORBITDB_URL) {
     console.log(`OrbitDB proxy enabled → ${ORBITDB_URL}`);
@@ -1533,25 +1534,46 @@ if (ORBITDB_URL) {
     app.get('/api/stats/orbitdb', proxyToOrbitDB('/health'));
     app.get('/api/stats/nodes', proxyToOrbitDB('/nodes'));
     app.get('/api/stats/trust', proxyToOrbitDB('/trust'));
-    app.get('/api/stats/archives', async (req, res) => {
-        try {
-            const url = new URL('/archives/resolve', ORBITDB_URL);
-            const response = await fetch(url.toString(), {
-                signal: AbortSignal.timeout(30000),
-            });
-            const data = await response.json();
-            data.gateway_url = IPFS_GATEWAY_URL;
-            res.status(response.status).json(data);
-        } catch (error) {
-            console.error('OrbitDB proxy error (/archives/resolve):', error.message);
-            res.status(502).json({ error: 'OrbitDB unavailable' });
-        }
-    });
 } else {
     // Return offline status when OrbitDB is not configured
     app.get('/api/stats/orbitdb', (req, res) => res.json({ status: 'not_configured' }));
     app.get('/api/stats/nodes', (req, res) => res.json({ nodes: [] }));
     app.get('/api/stats/trust', (req, res) => res.json({ trust: [] }));
+}
+
+// IPFS archive stats — queries Kubo for MFS root CID and peer ID
+if (KUBO_API_URL) {
+    console.log(`Kubo IPFS proxy enabled → ${KUBO_API_URL}`);
+
+    app.get('/api/stats/archives', async (req, res) => {
+        try {
+            // Get MFS root CID
+            const statUrl = new URL('/api/v0/files/stat?arg=/', KUBO_API_URL);
+            const statResp = await fetch(statUrl.toString(), {
+                method: 'POST',
+                signal: AbortSignal.timeout(10000),
+            });
+            const statData = await statResp.json();
+
+            // Get Kubo peer ID for IPNS resolution
+            const idUrl = new URL('/api/v0/id', KUBO_API_URL);
+            const idResp = await fetch(idUrl.toString(), {
+                method: 'POST',
+                signal: AbortSignal.timeout(10000),
+            });
+            const idData = await idResp.json();
+
+            res.json({
+                root_cid: statData.Hash || null,
+                ipns: idData.ID ? { name: idData.ID, cid: statData.Hash } : null,
+                gateway_url: IPFS_GATEWAY_URL,
+            });
+        } catch (error) {
+            console.error('Kubo proxy error (/api/stats/archives):', error.message);
+            res.status(502).json({ error: 'Kubo IPFS unavailable' });
+        }
+    });
+} else {
     app.get('/api/stats/archives', (req, res) => res.json({ status: 'not_configured', gateway_url: IPFS_GATEWAY_URL }));
 }
 
