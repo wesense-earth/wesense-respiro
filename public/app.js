@@ -11349,7 +11349,8 @@ class Respiro {
         if (archives && archives.root_cid) {
             const rootCid = archives.root_cid;
             const ipnsName = archives.ipns?.name;
-            const gatewayUrl = `https://ipfs.io/ipfs/${rootCid}`;
+            const gateway = archives.gateway_url || 'https://cloudflare-ipfs.com';
+            const gatewayUrl = `${gateway}/ipfs/${rootCid}`;
             let rows = `
                 <div class="stats-detail-row">
                     <span class="stats-detail-label">Root CID</span>
@@ -11357,7 +11358,7 @@ class Respiro {
                 </div>
             `;
             if (ipnsName) {
-                const ipnsUrl = `https://ipfs.io/ipns/${ipnsName}`;
+                const ipnsUrl = `${gateway}/ipns/${ipnsName}`;
                 rows += `
                     <div class="stats-detail-row">
                         <span class="stats-detail-label">IPNS Name</span>
