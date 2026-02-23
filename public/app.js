@@ -11349,7 +11349,7 @@ class Respiro {
         if (archives && archives.root_cid) {
             const rootCid = archives.root_cid;
             const ipnsName = archives.ipns?.name;
-            const gateway = archives.gateway_url || 'https://cloudflare-ipfs.com';
+            const gateway = archives.gateway_url || 'https://dweb.link';
             const gatewayUrl = `${gateway}/ipfs/${rootCid}`;
             let rows = `
                 <div class="stats-detail-row">

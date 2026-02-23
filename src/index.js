@@ -1508,7 +1508,7 @@ app.get('/api/stats/overview', async (req, res) => {
 
 // OrbitDB proxy endpoints (gated on ORBITDB_URL env var)
 const ORBITDB_URL = process.env.ORBITDB_URL;
-const IPFS_GATEWAY_URL = (process.env.IPFS_GATEWAY_URL || 'https://cloudflare-ipfs.com').replace(/\/+$/, '');
+const IPFS_GATEWAY_URL = (process.env.IPFS_GATEWAY_URL || 'https://dweb.link').replace(/\/+$/, '');
 
 if (ORBITDB_URL) {
     console.log(`OrbitDB proxy enabled → ${ORBITDB_URL}`);
