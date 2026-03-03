@@ -1227,11 +1227,20 @@ app.get('/api/regions/status', async (req, res) => {
         for (const metric of METRICS) {
             status.data[`adm${adminLevel}`][metric] = {};
             for (const deployment of DEPLOYMENT_FILTERS) {
-                const data = precomputedRegions[adminLevel]?.[metric]?.[deployment];
-                status.data[`adm${adminLevel}`][metric][deployment] = data ? {
-                    region_count: Object.keys(data.regions).length,
-                    timestamp: new Date(data.timestamp).toISOString()
-                } : null;
+                const deploymentData = precomputedRegions[adminLevel]?.[metric]?.[deployment];
+                if (deploymentData && typeof deploymentData === 'object') {
+                    // deploymentData is keyed by timeWindow: { '1h': { regions, timestamp }, '24h': { regions, timestamp }, ... }
+                    const windows = {};
+                    for (const [tw, data] of Object.entries(deploymentData)) {
+                        windows[tw] = data?.regions ? {
+                            region_count: Object.keys(data.regions).length,
+                            timestamp: new Date(data.timestamp).toISOString()
+                        } : null;
+                    }
+                    status.data[`adm${adminLevel}`][metric][deployment] = windows;
+                } else {
+                    status.data[`adm${adminLevel}`][metric][deployment] = null;
+                }
             }
         }
     }
