@@ -1985,6 +1985,17 @@
             margin: 0;
         }
 
+        .stats-header-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .stats-time-pills {
+            display: flex;
+            gap: 4px;
+        }
+
         .stats-refresh-btn {
             background: var(--bg-secondary);
             border: 1px solid var(--border-color, rgba(0,0,0,0.1));
@@ -8672,13 +8683,20 @@
             <div id="statsView" class="dash-view">
                 <div class="stats-header">
                     <h2>Network Stats</h2>
-                    <button class="stats-refresh-btn" id="statsRefreshBtn" title="Refresh stats">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
-                            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-                        </svg>
-                        Refresh
-                    </button>
+                    <div class="stats-header-controls">
+                        <div class="stats-time-pills" id="statsTimePills">
+                            <button class="time-nav-btn active" data-stats-range="1h">1h</button>
+                            <button class="time-nav-btn" data-stats-range="24h">24h</button>
+                            <button class="time-nav-btn" data-stats-range="7d">7d</button>
+                        </div>
+                        <button class="stats-refresh-btn" id="statsRefreshBtn" title="Refresh stats">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+                                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                            </svg>
+                            Refresh
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Hero row -->
@@ -8691,7 +8709,7 @@
                     <div class="stats-hero-card">
                         <div class="stats-hero-value" id="statsDevices">--</div>
                         <div class="stats-hero-label">Devices Online</div>
-                        <div class="stats-hero-sub" id="statsDevicesSub">last 24h</div>
+                        <div class="stats-hero-sub" id="statsDevicesSub">last 1h</div>
                     </div>
                     <div class="stats-hero-card">
                         <div class="stats-hero-value" id="statsRate">--</div>

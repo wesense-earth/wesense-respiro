@@ -1499,7 +1499,9 @@ app.get('/api/comparison', async (req, res) => {
 // Aggregated network overview (ClickHouse stats + in-memory state)
 app.get('/api/stats/overview', async (req, res) => {
     try {
-        const stats = await clickHouseClient.queryNetworkStats();
+        const allowed = ['1h', '24h', '7d'];
+        const range = allowed.includes(req.query.range) ? req.query.range : '1h';
+        const stats = await clickHouseClient.queryNetworkStats(range);
         res.json({
             ...(stats || {}),
             clickhouse_connected: clickHouseClient.isConnected(),

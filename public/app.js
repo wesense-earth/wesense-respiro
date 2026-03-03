@@ -10940,6 +10940,8 @@ class Respiro {
     // =========================================================================
 
     setupStats() {
+        this.statsTimeRange = '1h';
+
         // Debug toggle
         const toggle = document.getElementById('statsDebugToggle');
         const section = document.getElementById('statsDebugSection');
@@ -10947,6 +10949,19 @@ class Respiro {
             toggle.addEventListener('click', () => {
                 toggle.classList.toggle('expanded');
                 section.classList.toggle('expanded');
+            });
+        }
+
+        // Time range pills
+        const pills = document.getElementById('statsTimePills');
+        if (pills) {
+            pills.addEventListener('click', (e) => {
+                const btn = e.target.closest('[data-stats-range]');
+                if (!btn) return;
+                this.statsTimeRange = btn.dataset.statsRange;
+                pills.querySelectorAll('.time-nav-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                this.loadStats();
             });
         }
 
@@ -10980,7 +10995,7 @@ class Respiro {
 
         // Fire all requests in parallel — each re-renders the page as it arrives
         const all = Promise.all([
-            load('/api/stats/overview', 'ov'),
+            load(`/api/stats/overview?range=${this.statsTimeRange || '1h'}`, 'ov'),
             load('/api/stats/orbitdb', 'ob'),
             load('/api/stats/zenoh', 'ze'),
             load('/api/stats/nodes', 'no'),
@@ -11016,9 +11031,11 @@ class Respiro {
         // Hero: Devices Online
         const devicesEl = document.getElementById('statsDevices');
         const devicesSubEl = document.getElementById('statsDevicesSub');
-        if (overview.active_devices_24h != null) {
-            devicesEl.textContent = this.formatLargeNumber(overview.active_devices_24h);
-            devicesSubEl.textContent = `${overview.active_devices_1h || 0} in last hour`;
+        const rangeLabels = { '1h': 'last 1 hour', '24h': 'last 24 hours', '7d': 'last 7 days' };
+        const rangeLabel = rangeLabels[overview.range] || rangeLabels['1h'];
+        if (overview.active_devices != null) {
+            devicesEl.textContent = this.formatLargeNumber(overview.active_devices);
+            devicesSubEl.textContent = rangeLabel;
         }
 
         // Hero: Readings/min
@@ -11026,7 +11043,7 @@ class Respiro {
         const rateSubEl = document.getElementById('statsRateSub');
         if (overview.readings_per_minute != null) {
             rateEl.textContent = overview.readings_per_minute;
-            rateSubEl.textContent = `${this.formatLargeNumber(overview.readings_last_24h || 0)} in 24h`;
+            rateSubEl.textContent = `${this.formatLargeNumber(overview.readings_in_range || 0)} in ${overview.range || '1h'}`;
         }
 
         // Hero: Coverage
@@ -11089,11 +11106,9 @@ class Respiro {
             this.setHealthIndicator('healthOrbitdb', 'offline');
         }
 
-        // MQTT — infer from whether we have real-time data (readings in last hour)
-        if (overview.active_devices_1h > 0) {
+        // MQTT — infer from whether we have real-time data
+        if (overview.active_devices > 0) {
             this.setHealthIndicator('healthMqtt', 'healthy');
-        } else if (overview.active_devices_24h > 0) {
-            this.setHealthIndicator('healthMqtt', 'degraded');
         } else {
             this.setHealthIndicator('healthMqtt', 'unknown');
         }
@@ -11133,8 +11148,8 @@ class Respiro {
                 <span class="stats-detail-value">${overview.active_viewers != null ? overview.active_viewers : '--'}</span>
             </div>
             <div class="stats-detail-row">
-                <span class="stats-detail-label">Active Devices (1h)</span>
-                <span class="stats-detail-value">${overview.active_devices_1h != null ? overview.active_devices_1h : '--'}</span>
+                <span class="stats-detail-label">Active Devices (${overview.range || '1h'})</span>
+                <span class="stats-detail-value">${overview.active_devices != null ? overview.active_devices : '--'}</span>
             </div>
             <div class="stats-detail-row">
                 <span class="stats-detail-label">Total Devices</span>

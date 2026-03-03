@@ -950,6 +950,16 @@ class ClickHouseClient {
         return timestamp;
     }
 
+    _statsRangeToInterval(range) {
+        const map = { '1h': 'INTERVAL 1 HOUR', '24h': 'INTERVAL 24 HOUR', '7d': 'INTERVAL 7 DAY' };
+        return map[range] || map['1h'];
+    }
+
+    _statsRangeToMinutes(range) {
+        const map = { '1h': 60, '24h': 1440, '7d': 10080 };
+        return map[range] || map['1h'];
+    }
+
     /**
      * Direct query method for RegionService and other services
      * @param {Object} options - Query options { query, query_params, format }
@@ -1106,23 +1116,24 @@ class ClickHouseClient {
      * Query network-wide statistics for the Stats tab
      * Single efficient query using countDistinctIf for all metrics
      */
-    async queryNetworkStats() {
+    async queryNetworkStats(range = '1h') {
         if (!this.connected || !this.client) {
             return null;
         }
 
         try {
+            const interval = this._statsRangeToInterval(range);
+            const intervalMinutes = this._statsRangeToMinutes(range);
+
             const query = `
                 SELECT
                     uniqExact(device_id) as total_devices,
-                    uniqExactIf(device_id, timestamp > now() - INTERVAL 1 HOUR) as active_devices_1h,
-                    uniqExactIf(device_id, timestamp > now() - INTERVAL 24 HOUR) as active_devices_24h,
-                    countIf(timestamp > now() - INTERVAL 1 HOUR) as readings_last_1h,
-                    countIf(timestamp > now() - INTERVAL 24 HOUR) as readings_last_24h,
-                    round(countIf(timestamp > now() - INTERVAL 1 HOUR) / 60.0, 1) as readings_per_minute,
+                    uniqExactIf(device_id, timestamp > now() - ${interval}) as active_devices,
+                    countIf(timestamp > now() - ${interval}) as readings_in_range,
+                    round(countIf(timestamp > now() - ${interval}) / ${intervalMinutes}.0, 1) as readings_per_minute,
                     uniqExactIf(geo_country, geo_country != '') as countries,
                     uniqExactIf(concat(geo_country, '-', geo_subdivision), geo_country != '' AND geo_subdivision != '') as regions,
-                    uniqExactIf(reading_type, timestamp > now() - INTERVAL 24 HOUR) as reading_types_active,
+                    uniqExactIf(reading_type, timestamp > now() - ${interval}) as reading_types_active,
                     max(timestamp) as latest_reading,
                     count() as total_readings_all_time
                 FROM sensor_readings
@@ -1133,7 +1144,7 @@ class ClickHouseClient {
                     data_source,
                     uniqExact(device_id) as device_count
                 FROM sensor_readings
-                WHERE timestamp > now() - INTERVAL 24 HOUR
+                WHERE timestamp > now() - ${interval}
                   AND data_source != ''
                 GROUP BY data_source
                 ORDER BY device_count DESC
@@ -1156,11 +1167,10 @@ class ClickHouseClient {
             }
 
             return {
+                range,
                 total_devices: parseInt(row.total_devices),
-                active_devices_1h: parseInt(row.active_devices_1h),
-                active_devices_24h: parseInt(row.active_devices_24h),
-                readings_last_1h: parseInt(row.readings_last_1h),
-                readings_last_24h: parseInt(row.readings_last_24h),
+                active_devices: parseInt(row.active_devices),
+                readings_in_range: parseInt(row.readings_in_range),
                 readings_per_minute: parseFloat(row.readings_per_minute),
                 data_sources: dataSources,
                 coverage: {
