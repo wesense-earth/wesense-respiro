@@ -51,6 +51,10 @@ COPY src/ ./src/
 COPY public/ ./public/
 COPY tools/ ./tools/
 
+# Copy entrypoint
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
 # Create data directory for boundaries and cache
 RUN mkdir -p /app/data
 
@@ -60,5 +64,4 @@ EXPOSE 3000
 # Set NODE_ENV to production
 ENV NODE_ENV=production
 
-# Run the application
-CMD ["npm", "start"]
+ENTRYPOINT ["/app/entrypoint.sh"]
