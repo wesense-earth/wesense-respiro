@@ -1552,7 +1552,9 @@ if (ORBITDB_URL) {
 // Contribution breakdown (local vs P2P, by data source)
 app.get('/api/stats/contribution', async (req, res) => {
     try {
-        const contribution = await clickHouseClient.queryContribution();
+        const allowed = ['1h', '24h', '7d'];
+        const range = allowed.includes(req.query.range) ? req.query.range : '1h';
+        const contribution = await clickHouseClient.queryContribution(range);
         res.json(contribution || { local: {}, p2p: {} });
     } catch (error) {
         console.error('Error fetching contribution data:', error);

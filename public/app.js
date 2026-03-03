@@ -11000,7 +11000,7 @@ class Respiro {
             load('/api/stats/zenoh', 'ze'),
             load('/api/stats/nodes', 'no'),
             load('/api/stats/trust', 'tr'),
-            load('/api/stats/contribution', 'co'),
+            load(`/api/stats/contribution?range=${this.statsTimeRange || '1h'}`, 'co'),
             load('/api/stats/containers', 'ct'),
             load('/api/stats/network', 'nw'),
         ]);
