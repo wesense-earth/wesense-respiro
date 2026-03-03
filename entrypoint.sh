@@ -6,7 +6,7 @@ PUID="${PUID:-1000}"
 PGID="${PGID:-1000}"
 
 mkdir -p /app/data
-chown -R "$PUID:$PGID" /app/data
+chown -R "$PUID:$PGID" /app/data /app/public
 
 exec setpriv --reuid="$PUID" --regid="$PGID" --clear-groups \
     npm start "$@"
