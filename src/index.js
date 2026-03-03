@@ -1508,9 +1508,6 @@ app.get('/api/stats/overview', async (req, res) => {
 
 // OrbitDB proxy endpoints (gated on ORBITDB_URL env var)
 const ORBITDB_URL = process.env.ORBITDB_URL;
-const IPFS_GATEWAY_URL = (process.env.IPFS_GATEWAY_URL || 'https://dweb.link').replace(/\/+$/, '');
-const KUBO_API_URL = process.env.KUBO_API_URL;
-
 if (ORBITDB_URL) {
     console.log(`OrbitDB proxy enabled → ${ORBITDB_URL}`);
 
@@ -1539,42 +1536,6 @@ if (ORBITDB_URL) {
     app.get('/api/stats/orbitdb', (req, res) => res.json({ status: 'not_configured' }));
     app.get('/api/stats/nodes', (req, res) => res.json({ nodes: [] }));
     app.get('/api/stats/trust', (req, res) => res.json({ trust: [] }));
-}
-
-// IPFS archive stats — queries Kubo for MFS root CID and peer ID
-if (KUBO_API_URL) {
-    console.log(`Kubo IPFS proxy enabled → ${KUBO_API_URL}`);
-
-    app.get('/api/stats/archives', async (req, res) => {
-        try {
-            // Get MFS root CID
-            const statUrl = new URL('/api/v0/files/stat?arg=/', KUBO_API_URL);
-            const statResp = await fetch(statUrl.toString(), {
-                method: 'POST',
-                signal: AbortSignal.timeout(10000),
-            });
-            const statData = await statResp.json();
-
-            // Get Kubo peer ID for IPNS resolution
-            const idUrl = new URL('/api/v0/id', KUBO_API_URL);
-            const idResp = await fetch(idUrl.toString(), {
-                method: 'POST',
-                signal: AbortSignal.timeout(10000),
-            });
-            const idData = await idResp.json();
-
-            res.json({
-                root_cid: statData.Hash || null,
-                ipns: idData.ID ? { name: idData.ID, cid: statData.Hash } : null,
-                gateway_url: IPFS_GATEWAY_URL,
-            });
-        } catch (error) {
-            console.error('Kubo proxy error (/api/stats/archives):', error.message);
-            res.status(502).json({ error: 'Kubo IPFS unavailable' });
-        }
-    });
-} else {
-    app.get('/api/stats/archives', (req, res) => res.json({ status: 'not_configured', gateway_url: IPFS_GATEWAY_URL }));
 }
 
 // Contribution breakdown (local vs P2P, by data source)
@@ -1629,15 +1590,6 @@ app.get('/api/stats/network', async (req, res) => {
         } catch {}
     }
 
-    // Kubo IPFS
-    const kuboUrlCheck = process.env.KUBO_API_URL || '';
-    if (kuboUrlCheck) {
-        try {
-            const u = new URL(kuboUrlCheck);
-            checks.push({ name: 'Kubo IPFS', host: u.hostname, port: parseInt(u.port || '5001', 10), internal: true });
-        } catch {}
-    }
-
     // Zenoh API
     const zenohUrl = process.env.ZENOH_API_URL || '';
     if (zenohUrl) {
@@ -1674,53 +1626,6 @@ app.get('/api/stats/zenoh', async (req, res) => {
     }
 });
 
-
-// Kubo IPFS health proxy for stats
-app.get('/api/stats/kubo', async (req, res) => {
-    const kuboUrl = process.env.KUBO_API_URL;
-    if (!kuboUrl) {
-        return res.json({ status: 'not_configured' });
-    }
-    try {
-        // Get node identity (peer ID, addresses, protocols)
-        const idUrl = new URL('/api/v0/id', kuboUrl);
-        const idResp = await fetch(idUrl.toString(), {
-            method: 'POST',
-            signal: AbortSignal.timeout(10000),
-        });
-        const idData = await idResp.json();
-
-        // Get connected peers
-        const peersUrl = new URL('/api/v0/swarm/peers', kuboUrl);
-        const peersResp = await fetch(peersUrl.toString(), {
-            method: 'POST',
-            signal: AbortSignal.timeout(10000),
-        });
-        const peersData = await peersResp.json();
-        const peerList = peersData.Peers || [];
-
-        // Get repo stats (storage usage)
-        const repoUrl = new URL('/api/v0/repo/stat', kuboUrl);
-        const repoResp = await fetch(repoUrl.toString(), {
-            method: 'POST',
-            signal: AbortSignal.timeout(10000),
-        });
-        const repoData = await repoResp.json();
-
-        res.json({
-            status: 'healthy',
-            peer_id: idData.ID || '',
-            addresses: idData.Addresses || [],
-            agent_version: idData.AgentVersion || '',
-            peer_count: peerList.length,
-            repo_size: repoData.RepoSize || 0,
-            num_objects: repoData.NumObjects || 0,
-        });
-    } catch (error) {
-        console.error('Kubo health proxy error:', error.message);
-        res.status(502).json({ status: 'offline', error: 'Kubo unavailable' });
-    }
-});
 
 // =============================================================================
 // Docker Container Stats (optional — gated on DOCKER_STATS_ENABLED env var)
