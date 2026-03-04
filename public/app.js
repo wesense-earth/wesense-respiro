@@ -10966,10 +10966,10 @@ class Respiro {
         if (!this._statsCache) this._statsCache = { ov: {}, ob: {}, ze: {}, no: {}, tr: {}, co: {}, ct: {}, ar: {}, nw: {}, ku: {} };
         const r = this._statsCache;
         const renderAll = () => {
-            this.renderUserStats(r.ov, r.ob, r.ze, r.no, r.ku);
+            this.renderUserStats(r.ov, r.ob, r.ze, r.no);
             this.renderContribution(r.co, r.no);
             this.renderContainerStats(r.ct);
-            this.renderDebugStats(r.ob, r.ze, r.no, r.tr, r.ov, r.ar, r.nw, r.ku);
+            this.renderDebugStats(r.ob, r.ze, r.no, r.tr, r.ov, r.nw);
         };
 
         // Helper: fetch, store result, re-render
@@ -10987,9 +10987,7 @@ class Respiro {
             load('/api/stats/trust', 'tr'),
             load('/api/stats/contribution', 'co'),
             load('/api/stats/containers', 'ct'),
-            load('/api/stats/archives', 'ar'),
             load('/api/stats/network', 'nw'),
-            load('/api/stats/kubo', 'ku'),
         ]);
 
         all.finally(() => {
@@ -10997,7 +10995,7 @@ class Respiro {
         });
     }
 
-    renderUserStats(overview, orbitdb, zenoh, nodesData, kubo) {
+    renderUserStats(overview, orbitdb, zenoh, nodesData) {
         // Hero: P2P Peers
         const peersEl = document.getElementById('statsPeers');
         const peersSubEl = document.getElementById('statsPeersSub');
@@ -11089,14 +11087,6 @@ class Respiro {
             this.setHealthIndicator('healthOrbitdb', 'healthy');
         } else {
             this.setHealthIndicator('healthOrbitdb', 'offline');
-        }
-
-        if (kubo && kubo.status === 'not_configured') {
-            this.setHealthIndicator('healthKubo', 'unknown');
-        } else if (kubo && kubo.status === 'healthy') {
-            this.setHealthIndicator('healthKubo', 'healthy');
-        } else {
-            this.setHealthIndicator('healthKubo', 'offline');
         }
 
         // MQTT — infer from whether we have real-time data (readings in last hour)
@@ -11261,7 +11251,7 @@ class Respiro {
         return `${val < 10 ? val.toFixed(1) : Math.round(val)} ${units[i]}`;
     }
 
-    renderDebugStats(orbitdb, zenoh, nodes, trust, overview, archives, network, kubo) {
+    renderDebugStats(orbitdb, zenoh, nodes, trust, overview, network) {
         // P2P Network
         const p2pEl = document.getElementById('debugP2P');
         if (orbitdb && orbitdb.peer_count != null) {
@@ -11351,65 +11341,6 @@ class Respiro {
             }).join('');
         } else {
             portsEl.innerHTML = '<div class="stats-empty">No checks configured</div>';
-        }
-
-        // Kubo IPFS
-        const kuboEl = document.getElementById('debugKubo');
-        if (kubo && kubo.status === 'healthy') {
-            const repoSize = kubo.repo_size || 0;
-            const repoSizeStr = repoSize > 0 ? this.formatBytes(repoSize) : '--';
-            kuboEl.innerHTML = `
-                ${kubo.peer_id ? `<div class="stats-mono-row stats-mono">Peer ID: ${this.statsEscapeHtml(kubo.peer_id)}</div>` : ''}
-                <div class="stats-mono-row stats-mono">Swarm Peers: ${kubo.peer_count}</div>
-                <div class="stats-mono-row stats-mono">Repo Size: ${repoSizeStr} (${(kubo.num_objects || 0).toLocaleString()} objects)</div>
-                ${kubo.agent_version ? `<div class="stats-mono-row stats-mono">Agent: ${this.statsEscapeHtml(kubo.agent_version)}</div>` : ''}
-            `;
-        } else if (kubo && kubo.status === 'not_configured') {
-            kuboEl.innerHTML = '<div class="stats-empty">Not configured</div>';
-        } else {
-            kuboEl.innerHTML = '<div class="stats-empty">Not connected</div>';
-        }
-
-        // IPFS Archives
-        const ipfsEl = document.getElementById('debugIPFS');
-        if (archives && archives.root_cid) {
-            const rootCid = archives.root_cid;
-            const ipnsName = archives.ipns?.name;
-            const gateway = archives.gateway_url || 'https://dweb.link';
-            const gatewayUrl = `${gateway}/ipfs/${rootCid}`;
-            let rows = `
-                <div class="stats-detail-row">
-                    <span class="stats-detail-label">Root CID</span>
-                    <span class="stats-detail-value stats-mono"><a href="${gatewayUrl}" target="_blank" rel="noopener">${this.statsEscapeHtml(rootCid)}</a></span>
-                </div>
-            `;
-            if (ipnsName) {
-                const ipnsUrl = `${gateway}/ipns/${ipnsName}`;
-                rows += `
-                    <div class="stats-detail-row">
-                        <span class="stats-detail-label">IPNS Name</span>
-                        <span class="stats-detail-value stats-mono"><a href="${ipnsUrl}" target="_blank" rel="noopener">${this.statsEscapeHtml(ipnsName)}</a></span>
-                    </div>
-                `;
-            } else {
-                rows += `
-                    <div class="stats-detail-row">
-                        <span class="stats-detail-label">IPNS Name</span>
-                        <span class="stats-detail-value" style="color:var(--text-muted)">Not published</span>
-                    </div>
-                `;
-            }
-            rows += `
-                <div class="stats-detail-row">
-                    <span class="stats-detail-label">Public Gateway</span>
-                    <span class="stats-detail-value"><a href="${gatewayUrl}" target="_blank" rel="noopener">${this.statsEscapeHtml(gatewayUrl)}</a></span>
-                </div>
-            `;
-            ipfsEl.innerHTML = rows;
-        } else if (archives && archives.status === 'not_configured') {
-            ipfsEl.innerHTML = '<div class="stats-empty">Kubo IPFS not configured</div>';
-        } else {
-            ipfsEl.innerHTML = '<div class="stats-empty">No archives</div>';
         }
 
         // Background Tasks
