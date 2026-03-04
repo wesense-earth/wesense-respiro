@@ -153,4 +153,4 @@ temperature, humidity, pressure, co2, pm1_0, pm2_5, pm10, voc_index, nox_index
 
 ## License
 
-MIT
+AGPL-3.0
