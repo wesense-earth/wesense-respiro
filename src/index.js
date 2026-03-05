@@ -1577,6 +1577,28 @@ if (IROH_SIDECAR_URL) {
     app.get('/api/stats/iroh', (req, res) => res.json({ status: 'not_configured' }));
 }
 
+// Zenoh Bridge stats proxy (gated on ZENOH_BRIDGE_URL env var)
+const ZENOH_BRIDGE_URL = process.env.ZENOH_BRIDGE_URL;
+if (ZENOH_BRIDGE_URL) {
+    console.log(`Zenoh bridge proxy enabled → ${ZENOH_BRIDGE_URL}`);
+
+    app.get('/api/stats/zenoh-bridge', async (req, res) => {
+        try {
+            const url = new URL('/stats', ZENOH_BRIDGE_URL);
+            const response = await fetch(url.toString(), {
+                signal: AbortSignal.timeout(10000),
+            });
+            const data = await response.json();
+            res.status(response.status).json(data);
+        } catch (error) {
+            console.error('Zenoh bridge proxy error:', error.message);
+            res.status(502).json({ error: 'Zenoh bridge unavailable' });
+        }
+    });
+} else {
+    app.get('/api/stats/zenoh-bridge', (req, res) => res.json({ status: 'not_configured' }));
+}
+
 // Contribution breakdown (local vs P2P, by data source)
 app.get('/api/stats/contribution', async (req, res) => {
     try {
@@ -1646,6 +1668,15 @@ app.get('/api/stats/network', async (req, res) => {
         try {
             const u = new URL(irohUrl);
             checks.push({ name: 'Iroh Sidecar', host: u.hostname, port: parseInt(u.port || '4400', 10), internal: true });
+        } catch {}
+    }
+
+    // Zenoh Bridge
+    const zbUrl = process.env.ZENOH_BRIDGE_URL || '';
+    if (zbUrl) {
+        try {
+            const u = new URL(zbUrl);
+            checks.push({ name: 'Zenoh Bridge', host: u.hostname, port: parseInt(u.port || '5300', 10), internal: true });
         } catch {}
     }
 
