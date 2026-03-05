@@ -10978,13 +10978,13 @@ class Respiro {
 
         // Accumulated results — render progressively as fetches complete.
         // Preserve previous results so values don't flicker to empty between refreshes.
-        if (!this._statsCache) this._statsCache = { ov: {}, ob: {}, ze: {}, no: {}, tr: {}, co: {}, ct: {}, ar: {}, nw: {}, ku: {} };
+        if (!this._statsCache) this._statsCache = { ov: {}, ob: {}, ze: {}, no: {}, tr: {}, co: {}, ct: {}, ar: {}, nw: {}, ku: {}, ir: {}, st: {}, rp: {} };
         const r = this._statsCache;
         const renderAll = () => {
             this.renderUserStats(r.ov, r.ob, r.ze, r.no);
             this.renderContribution(r.co, r.no);
             this.renderContainerStats(r.ct);
-            this.renderDebugStats(r.ob, r.ze, r.no, r.tr, r.ov, r.nw);
+            this.renderDebugStats(r.ob, r.ze, r.no, r.tr, r.ov, r.nw, r.ir, r.rp);
         };
 
         // Helper: fetch, store result, re-render
@@ -11003,6 +11003,9 @@ class Respiro {
             load(`/api/stats/contribution?range=${this.statsTimeRange || '1h'}`, 'co'),
             load('/api/stats/containers', 'ct'),
             load('/api/stats/network', 'nw'),
+            load('/api/stats/iroh', 'ir'),
+            load('/api/stats/stores', 'st'),
+            load('/api/stats/replication', 'rp'),
         ]);
 
         all.finally(() => {
@@ -11266,7 +11269,7 @@ class Respiro {
         return `${val < 10 ? val.toFixed(1) : Math.round(val)} ${units[i]}`;
     }
 
-    renderDebugStats(orbitdb, zenoh, nodes, trust, overview, network) {
+    renderDebugStats(orbitdb, zenoh, nodes, trust, overview, network, iroh, replication) {
         // P2P Network
         const p2pEl = document.getElementById('debugP2P');
         if (orbitdb && orbitdb.peer_count != null) {
@@ -11374,6 +11377,51 @@ class Respiro {
             `;
         } else {
             tasksEl.innerHTML = '<div class="stats-empty">No data</div>';
+        }
+
+        // Iroh Sidecar
+        const irohEl = document.getElementById('debugIroh');
+        if (irohEl) {
+            if (iroh && iroh.node_id) {
+                const relayHtml = iroh.relay_urls && iroh.relay_urls.length > 0
+                    ? `<div class="stats-mono-row stats-mono">Relays: ${iroh.relay_urls.map(u => this.statsEscapeHtml(u)).join(', ')}</div>`
+                    : '';
+                const repl = iroh.replication || {};
+                irohEl.innerHTML = `
+                    <div class="stats-mono-row stats-mono">Node ID: ${this.statsEscapeHtml(iroh.node_id)}</div>
+                    <div class="stats-mono-row stats-mono">Store Scope: ${(iroh.store_scope || []).map(s => this.statsEscapeHtml(s)).join(', ') || 'none (announce-only)'}</div>
+                    <div class="stats-mono-row stats-mono">Blobs: ${iroh.blob_count ?? 0}</div>
+                    ${relayHtml}
+                    <div class="stats-mono-row stats-mono">Replicated: ${repl.replicated ?? 0} | Skipped: ${(repl.skipped_existing ?? 0) + (repl.skipped_scope ?? 0)} | Failed: ${repl.failed ?? 0}</div>
+                    ${repl.last_replicated ? `<div class="stats-mono-row stats-mono">Last Replicated: ${this.statsEscapeHtml(repl.last_replicated)}</div>` : ''}
+                    ${repl.last_reconciliation ? `<div class="stats-mono-row stats-mono">Last Reconciliation: ${this.statsEscapeHtml(repl.last_reconciliation)}</div>` : ''}
+                `;
+            } else if (iroh && iroh.status === 'not_configured') {
+                irohEl.innerHTML = '<div class="stats-empty">Iroh sidecar not configured</div>';
+            } else {
+                irohEl.innerHTML = '<div class="stats-empty">Loading...</div>';
+            }
+        }
+
+        // Replication Health
+        const replEl = document.getElementById('debugReplication');
+        if (replEl) {
+            const regions = replication?.regions || [];
+            if (regions.length > 0) {
+                replEl.innerHTML = regions.map(r => {
+                    let color, label;
+                    if (r.node_count >= 3) { color = '#4caf50'; label = 'healthy'; }
+                    else if (r.node_count === 2) { color = '#ff9800'; label = 'warning'; }
+                    else if (r.node_count === 1) { color = '#f44336'; label = 'critical'; }
+                    else { color = '#9e9e9e'; label = 'none'; }
+                    return `<div class="stats-health-row">
+                        <span class="stats-health-label">${this.statsEscapeHtml(r.scope_pattern)} <span style="color:var(--text-muted)">${r.node_count} node${r.node_count !== 1 ? 's' : ''}</span></span>
+                        <span class="health-dot" style="background:${color}" title="${label}"></span>
+                    </div>`;
+                }).join('');
+            } else {
+                replEl.innerHTML = '<div class="stats-empty">No store registrations</div>';
+            }
         }
     }
 

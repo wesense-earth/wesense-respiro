@@ -1542,11 +1542,39 @@ if (ORBITDB_URL) {
     app.get('/api/stats/orbitdb', proxyToOrbitDB('/health'));
     app.get('/api/stats/nodes', proxyToOrbitDB('/nodes'));
     app.get('/api/stats/trust', proxyToOrbitDB('/trust'));
+    app.get('/api/stats/stores', proxyToOrbitDB('/stores'));
+    app.get('/api/stats/replication', proxyToOrbitDB('/stores/replication'));
 } else {
     // Return offline status when OrbitDB is not configured
     app.get('/api/stats/orbitdb', (req, res) => res.json({ status: 'not_configured' }));
     app.get('/api/stats/nodes', (req, res) => res.json({ nodes: [] }));
     app.get('/api/stats/trust', (req, res) => res.json({ trust: [] }));
+    app.get('/api/stats/stores', (req, res) => res.json({ stores: [] }));
+    app.get('/api/stats/replication', (req, res) => res.json({ regions: [] }));
+}
+
+// Iroh Sidecar proxy endpoints (gated on IROH_SIDECAR_URL env var)
+const IROH_SIDECAR_URL = process.env.IROH_SIDECAR_URL;
+if (IROH_SIDECAR_URL) {
+    console.log(`Iroh sidecar proxy enabled → ${IROH_SIDECAR_URL}`);
+
+    const proxyToIroh = (endpoint) => async (req, res) => {
+        try {
+            const url = new URL(endpoint, IROH_SIDECAR_URL);
+            const response = await fetch(url.toString(), {
+                signal: AbortSignal.timeout(30000),
+            });
+            const data = await response.json();
+            res.status(response.status).json(data);
+        } catch (error) {
+            console.error(`Iroh proxy error (${endpoint}):`, error.message);
+            res.status(502).json({ error: 'Iroh sidecar unavailable' });
+        }
+    };
+
+    app.get('/api/stats/iroh', proxyToIroh('/status'));
+} else {
+    app.get('/api/stats/iroh', (req, res) => res.json({ status: 'not_configured' }));
 }
 
 // Contribution breakdown (local vs P2P, by data source)
@@ -1609,6 +1637,15 @@ app.get('/api/stats/network', async (req, res) => {
         try {
             const u = new URL(zenohUrl);
             checks.push({ name: 'Zenoh API', host: u.hostname, port: parseInt(u.port || '5100', 10), internal: true });
+        } catch {}
+    }
+
+    // Iroh Sidecar
+    const irohUrl = process.env.IROH_SIDECAR_URL || '';
+    if (irohUrl) {
+        try {
+            const u = new URL(irohUrl);
+            checks.push({ name: 'Iroh Sidecar', host: u.hostname, port: parseInt(u.port || '4400', 10), internal: true });
         } catch {}
     }
 
