@@ -10981,7 +10981,7 @@ class Respiro {
         if (!this._statsCache) this._statsCache = { ov: {}, ob: {}, ze: {}, no: {}, tr: {}, co: {}, ct: {}, ar: {}, nw: {}, ku: {}, ir: {}, st: {}, rp: {} };
         const r = this._statsCache;
         const renderAll = () => {
-            this.renderUserStats(r.ov, r.ob, r.ze, r.no);
+            this.renderUserStats(r.ov, r.ob, r.ze, r.no, r.ir);
             this.renderContribution(r.co, r.no);
             this.renderContainerStats(r.ct);
             this.renderDebugStats(r.ob, r.ze, r.no, r.tr, r.ov, r.nw, r.ir, r.rp);
@@ -11013,7 +11013,7 @@ class Respiro {
         });
     }
 
-    renderUserStats(overview, orbitdb, zenoh, nodesData) {
+    renderUserStats(overview, orbitdb, zenoh, nodesData, iroh) {
         // Hero: P2P Peers
         const peersEl = document.getElementById('statsPeers');
         const peersSubEl = document.getElementById('statsPeersSub');
@@ -11114,6 +11114,15 @@ class Respiro {
             this.setHealthIndicator('healthMqtt', 'healthy');
         } else {
             this.setHealthIndicator('healthMqtt', 'unknown');
+        }
+
+        // Iroh Sidecar
+        if (iroh && iroh.status === 'not_configured') {
+            this.setHealthIndicator('healthIroh', 'unknown');
+        } else if (iroh && iroh.node_id) {
+            this.setHealthIndicator('healthIroh', 'healthy');
+        } else {
+            this.setHealthIndicator('healthIroh', 'offline');
         }
 
         // Coverage Details
