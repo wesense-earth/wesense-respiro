@@ -10978,12 +10978,13 @@ class Respiro {
 
         // Accumulated results — render progressively as fetches complete.
         // Preserve previous results so values don't flicker to empty between refreshes.
-        if (!this._statsCache) this._statsCache = { ov: {}, ob: {}, ze: {}, no: {}, tr: {}, co: {}, ct: {}, ar: {}, nw: {}, ku: {}, ir: {}, st: {}, rp: {}, zb: {} };
+        if (!this._statsCache) this._statsCache = { ov: {}, ob: {}, ze: {}, no: {}, tr: {}, co: {}, ct: {}, ar: {}, nw: {}, ku: {}, ir: {}, st: {}, rp: {}, zb: {}, arch: {} };
         const r = this._statsCache;
         const renderAll = () => {
             this.renderUserStats(r.ov, r.ob, r.ze, r.no, r.ir, r.zb);
             this.renderContribution(r.co, r.no);
             this.renderContainerStats(r.ct);
+            this.renderArchiveStats(r.arch);
             this.renderDebugStats(r.ob, r.ze, r.no, r.tr, r.ov, r.nw, r.ir, r.rp, r.zb);
         };
 
@@ -11007,6 +11008,7 @@ class Respiro {
             load('/api/stats/stores', 'st'),
             load('/api/stats/replication', 'rp'),
             load('/api/stats/zenoh-bridge', 'zb'),
+            load('/api/stats/archive', 'arch'),
         ]);
 
         all.finally(() => {
@@ -11280,6 +11282,181 @@ class Respiro {
                 </tbody>
             </table>
         `;
+    }
+
+    renderArchiveStats(data) {
+        const el = document.getElementById('statsArchive');
+        const triggerBtn = document.getElementById('archiveTriggerBtn');
+        if (!el) return;
+
+        if (!data || data.status === 'not_configured') {
+            el.innerHTML = '<div class="stats-empty">Archive not configured (GATEWAY_URL not set)</div>';
+            if (triggerBtn) triggerBtn.style.display = 'none';
+            return;
+        }
+        if (data.error) {
+            el.innerHTML = `<div class="stats-empty">${this.statsEscapeHtml(data.error)}</div>`;
+            if (triggerBtn) triggerBtn.style.display = 'none';
+            return;
+        }
+
+        const archive = data.archive || data;
+        const regions = archive.regions || [];
+        const comparison = data.comparison || {};
+
+        // Show trigger button
+        if (triggerBtn) {
+            triggerBtn.style.display = '';
+            if (!triggerBtn._bound) {
+                triggerBtn._bound = true;
+                triggerBtn.addEventListener('click', async () => {
+                    triggerBtn.classList.add('loading');
+                    triggerBtn.disabled = true;
+                    try {
+                        const resp = await fetch('/api/archive/trigger', { method: 'POST' });
+                        const result = await resp.json();
+                        if (!resp.ok) {
+                            alert(result.detail || 'Archive trigger failed');
+                        }
+                    } catch (e) {
+                        alert('Failed to trigger archive: ' + e.message);
+                    } finally {
+                        triggerBtn.classList.remove('loading');
+                        triggerBtn.disabled = false;
+                    }
+                });
+            }
+        }
+
+        // Summary bar
+        const totalRegions = archive.total_regions || regions.length;
+        const totalDays = archive.total_days || 0;
+        const totalBlobs = archive.total_blobs || 0;
+        const lastCycle = archive.last_archive_cycle;
+        const totalGaps = regions.reduce((sum, r) => sum + (r.gaps?.length || 0), 0);
+
+        let summaryHtml = `
+            <div class="archive-summary">
+                <div class="archive-summary-item">
+                    <div class="archive-summary-value">${totalRegions}</div>
+                    <div class="archive-summary-label">Regions</div>
+                </div>
+                <div class="archive-summary-item">
+                    <div class="archive-summary-value">${this.formatLargeNumber(totalDays)}</div>
+                    <div class="archive-summary-label">Day-files</div>
+                </div>
+                <div class="archive-summary-item">
+                    <div class="archive-summary-value">${this.formatLargeNumber(totalBlobs)}</div>
+                    <div class="archive-summary-label">Blobs</div>
+                </div>
+                <div class="archive-summary-item">
+                    <div class="archive-summary-value">${totalGaps === 0 ? '0' : totalGaps}</div>
+                    <div class="archive-summary-label">Gaps</div>
+                </div>
+                <div class="archive-summary-item">
+                    <div class="archive-summary-value">${lastCycle ? this.getTimeAgo(lastCycle) : '--'}</div>
+                    <div class="archive-summary-label">Last Cycle</div>
+                </div>
+            </div>
+        `;
+
+        // Region table
+        if (regions.length > 0) {
+            // Sort by country then subdivision
+            if (!this._archiveSort) this._archiveSort = { col: 'region', asc: true };
+            const sort = this._archiveSort;
+
+            const sorted = [...regions].sort((a, b) => {
+                let cmp = 0;
+                switch (sort.col) {
+                    case 'region':
+                        cmp = (`${a.country}/${a.subdivision}`).localeCompare(`${b.country}/${b.subdivision}`);
+                        break;
+                    case 'days':
+                        cmp = (a.day_count || 0) - (b.day_count || 0);
+                        break;
+                    case 'earliest':
+                        cmp = (a.earliest || '').localeCompare(b.earliest || '');
+                        break;
+                    case 'latest':
+                        cmp = (a.latest || '').localeCompare(b.latest || '');
+                        break;
+                    case 'gaps':
+                        cmp = (a.gaps?.length || 0) - (b.gaps?.length || 0);
+                        break;
+                }
+                return sort.asc ? cmp : -cmp;
+            });
+
+            const arrow = (col) => sort.col === col ? `<span class="sort-arrow">${sort.asc ? '▲' : '▼'}</span>` : '';
+
+            summaryHtml += `
+                <table class="archive-region-table" id="archiveRegionTable">
+                    <thead>
+                        <tr>
+                            <th data-sort="region">Region${arrow('region')}</th>
+                            <th data-sort="days">Days${arrow('days')}</th>
+                            <th data-sort="earliest">Earliest${arrow('earliest')}</th>
+                            <th data-sort="latest">Latest${arrow('latest')}</th>
+                            <th data-sort="gaps">Gaps${arrow('gaps')}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${sorted.map(r => {
+                            const gapCount = r.gaps?.length || 0;
+                            const gapClass = gapCount === 0 ? 'no-gaps' : 'has-gaps';
+                            const gapTitle = gapCount > 0 ? `Missing: ${r.gaps.slice(0, 5).join(', ')}${gapCount > 5 ? ` +${gapCount - 5} more` : ''}` : 'No gaps';
+                            return `<tr>
+                                <td>${this.statsEscapeHtml(r.country)}/${this.statsEscapeHtml(r.subdivision)}</td>
+                                <td>${r.day_count}</td>
+                                <td>${this.statsEscapeHtml(r.earliest || '--')}</td>
+                                <td>${this.statsEscapeHtml(r.latest || '--')}</td>
+                                <td>${gapCount}<span class="archive-gap-indicator ${gapClass}" title="${this.statsEscapeHtml(gapTitle)}"></span></td>
+                            </tr>`;
+                        }).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+
+        // Comparison bar (archived vs total in ClickHouse)
+        if (comparison.total_readings) {
+            const archivable = comparison.archivable_readings || 0;
+            const pct = archivable > 0 ? Math.round((totalDays / (comparison.total_days || 1)) * 100) : 0;
+            summaryHtml += `
+                <div class="archive-comparison">
+                    <div style="display:flex;justify-content:space-between;margin-bottom:2px">
+                        <span>Archive coverage</span>
+                        <span>${totalDays} / ${comparison.total_days || '--'} day-regions (${Math.min(pct, 100)}%)</span>
+                    </div>
+                    <div class="bar-track">
+                        <div class="bar-fill" style="width:${Math.min(pct, 100)}%"></div>
+                    </div>
+                    <div style="margin-top:4px;font-size:11px">
+                        ${this.formatLargeNumber(comparison.total_readings)} total readings | ${this.formatLargeNumber(archivable)} archivable
+                        ${comparison.date_range ? ` | ${comparison.date_range}` : ''}
+                    </div>
+                </div>
+            `;
+        }
+
+        el.innerHTML = summaryHtml;
+
+        // Attach sort handlers
+        const table = document.getElementById('archiveRegionTable');
+        if (table) {
+            table.querySelectorAll('th[data-sort]').forEach(th => {
+                th.addEventListener('click', () => {
+                    const col = th.dataset.sort;
+                    if (this._archiveSort.col === col) {
+                        this._archiveSort.asc = !this._archiveSort.asc;
+                    } else {
+                        this._archiveSort = { col, asc: true };
+                    }
+                    this.renderArchiveStats(data);
+                });
+            });
+        }
     }
 
     formatBytes(bytes) {
