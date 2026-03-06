@@ -11015,28 +11015,36 @@ class Respiro {
     }
 
     renderUserStats(overview, orbitdb, zenoh, nodesData, iroh, zenohBridge) {
-        // Hero: P2P Peers — dual OrbitDB / Zenoh count
+        // Hero: P2P Peers — Live (Zenoh) / Sync (OrbitDB) / Archive (Iroh)
         const peersEl = document.getElementById('statsPeers');
         const peersSubEl = document.getElementById('statsPeersSub');
 
-        // OrbitDB peer count
-        let obCount = '--';
-        if (orbitdb && orbitdb.peer_count != null) {
-            obCount = String(orbitdb.wesense_peer_count ?? 0);
-        } else if (orbitdb && orbitdb.status === 'not_configured') {
-            obCount = '--';
-        }
-
-        // Zenoh Bridge remote peer count
-        let zbCount = '--';
+        // Zenoh Bridge remote peer count (live data)
+        let liveCount = '--';
         if (zenohBridge && zenohBridge.remote_peers != null) {
-            zbCount = String(zenohBridge.remote_peers);
+            liveCount = String(zenohBridge.remote_peers);
         } else if (zenohBridge && zenohBridge.status === 'not_configured') {
-            zbCount = '--';
+            liveCount = '--';
         }
 
-        peersEl.textContent = `${obCount} / ${zbCount}`;
-        peersSubEl.textContent = 'OrbitDB / Zenoh';
+        // OrbitDB peer count (sync/discovery)
+        let syncCount = '--';
+        if (orbitdb && orbitdb.peer_count != null) {
+            syncCount = String(orbitdb.wesense_peer_count ?? 0);
+        } else if (orbitdb && orbitdb.status === 'not_configured') {
+            syncCount = '--';
+        }
+
+        // Iroh (archive replication)
+        let archiveCount = '--';
+        if (iroh && iroh.node_id) {
+            archiveCount = iroh.connected_peers != null ? String(iroh.connected_peers) : '0';
+        } else if (iroh && iroh.status === 'not_configured') {
+            archiveCount = '--';
+        }
+
+        peersEl.textContent = `${liveCount} / ${syncCount} / ${archiveCount}`;
+        peersSubEl.textContent = 'Live / Sync / Archive';
 
         // Hero: Devices Online
         const devicesEl = document.getElementById('statsDevices');
