@@ -11228,14 +11228,6 @@ class Respiro {
         } else {
             p2pEl.innerHTML = '<div class="stats-empty">No P2P data yet</div>';
         }
-        if (nodeCount > 0) {
-            p2pEl.innerHTML += `
-                <div class="stats-detail-row" style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(128,128,128,0.1)">
-                    <span class="stats-detail-label">Registered Nodes</span>
-                    <span class="stats-detail-value">${nodeCount}</span>
-                </div>
-            `;
-        }
     }
 
     renderContainerStats(data) {
@@ -11312,17 +11304,25 @@ class Respiro {
                 triggerBtn.addEventListener('click', async () => {
                     triggerBtn.classList.add('loading');
                     triggerBtn.disabled = true;
+                    const origText = triggerBtn.innerHTML;
                     try {
                         const resp = await fetch('/api/archive/trigger', { method: 'POST' });
                         const result = await resp.json();
                         if (!resp.ok) {
                             alert(result.detail || 'Archive trigger failed');
+                        } else {
+                            triggerBtn.innerHTML = '&#10003; Cycle started';
+                            // Refresh stats after a short delay to show progress
+                            setTimeout(() => this.loadStats(), 10000);
                         }
                     } catch (e) {
                         alert('Failed to trigger archive: ' + e.message);
                     } finally {
                         triggerBtn.classList.remove('loading');
-                        triggerBtn.disabled = false;
+                        setTimeout(() => {
+                            triggerBtn.innerHTML = origText;
+                            triggerBtn.disabled = false;
+                        }, 5000);
                     }
                 });
             }
@@ -11391,6 +11391,7 @@ class Respiro {
             const arrow = (col) => sort.col === col ? `<span class="sort-arrow">${sort.asc ? '▲' : '▼'}</span>` : '';
 
             summaryHtml += `
+                <div class="archive-region-wrapper">
                 <table class="archive-region-table" id="archiveRegionTable">
                     <thead>
                         <tr>
@@ -11416,6 +11417,7 @@ class Respiro {
                         }).join('')}
                     </tbody>
                 </table>
+                </div>
             `;
         }
 
