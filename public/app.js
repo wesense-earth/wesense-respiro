@@ -10978,13 +10978,13 @@ class Respiro {
 
         // Accumulated results — render progressively as fetches complete.
         // Preserve previous results so values don't flicker to empty between refreshes.
-        if (!this._statsCache) this._statsCache = { ov: {}, ob: {}, ze: {}, no: {}, tr: {}, co: {}, ct: {}, ar: {}, nw: {}, ku: {}, ir: {}, st: {}, rp: {} };
+        if (!this._statsCache) this._statsCache = { ov: {}, ob: {}, ze: {}, no: {}, tr: {}, co: {}, ct: {}, ar: {}, nw: {}, ku: {}, ir: {}, st: {}, rp: {}, zb: {} };
         const r = this._statsCache;
         const renderAll = () => {
-            this.renderUserStats(r.ov, r.ob, r.ze, r.no, r.ir);
+            this.renderUserStats(r.ov, r.ob, r.ze, r.no, r.ir, r.zb);
             this.renderContribution(r.co, r.no);
             this.renderContainerStats(r.ct);
-            this.renderDebugStats(r.ob, r.ze, r.no, r.tr, r.ov, r.nw, r.ir, r.rp);
+            this.renderDebugStats(r.ob, r.ze, r.no, r.tr, r.ov, r.nw, r.ir, r.rp, r.zb);
         };
 
         // Helper: fetch, store result, re-render
@@ -11006,6 +11006,7 @@ class Respiro {
             load('/api/stats/iroh', 'ir'),
             load('/api/stats/stores', 'st'),
             load('/api/stats/replication', 'rp'),
+            load('/api/stats/zenoh-bridge', 'zb'),
         ]);
 
         all.finally(() => {
@@ -11013,23 +11014,29 @@ class Respiro {
         });
     }
 
-    renderUserStats(overview, orbitdb, zenoh, nodesData, iroh) {
-        // Hero: P2P Peers
+    renderUserStats(overview, orbitdb, zenoh, nodesData, iroh, zenohBridge) {
+        // Hero: P2P Peers — dual OrbitDB / Zenoh count
         const peersEl = document.getElementById('statsPeers');
         const peersSubEl = document.getElementById('statsPeersSub');
+
+        // OrbitDB peer count
+        let obCount = '--';
         if (orbitdb && orbitdb.peer_count != null) {
-            // Use wesense_peer_count (gossipsub topic subscribers) — these are
-            // actual WeSense stations sharing OrbitDB databases, not IPFS relays.
-            const wesensePeers = orbitdb.wesense_peer_count ?? 0;
-            peersEl.textContent = wesensePeers;
-            peersSubEl.textContent = wesensePeers === 1 ? 'peer' : 'peers';
+            obCount = String(orbitdb.wesense_peer_count ?? 0);
         } else if (orbitdb && orbitdb.status === 'not_configured') {
-            peersEl.textContent = '--';
-            peersSubEl.textContent = 'not configured';
-        } else {
-            peersEl.textContent = '--';
-            peersSubEl.textContent = 'offline';
+            obCount = '--';
         }
+
+        // Zenoh Bridge remote peer count
+        let zbCount = '--';
+        if (zenohBridge && zenohBridge.remote_peers != null) {
+            zbCount = String(zenohBridge.remote_peers);
+        } else if (zenohBridge && zenohBridge.status === 'not_configured') {
+            zbCount = '--';
+        }
+
+        peersEl.textContent = `${obCount} / ${zbCount}`;
+        peersSubEl.textContent = 'OrbitDB / Zenoh';
 
         // Hero: Devices Online
         const devicesEl = document.getElementById('statsDevices');
@@ -11278,7 +11285,7 @@ class Respiro {
         return `${val < 10 ? val.toFixed(1) : Math.round(val)} ${units[i]}`;
     }
 
-    renderDebugStats(orbitdb, zenoh, nodes, trust, overview, network, iroh, replication) {
+    renderDebugStats(orbitdb, zenoh, nodes, trust, overview, network, iroh, replication, zenohBridge) {
         // P2P Network
         const p2pEl = document.getElementById('debugP2P');
         if (orbitdb && orbitdb.peer_count != null) {
@@ -11409,6 +11416,25 @@ class Respiro {
                 irohEl.innerHTML = '<div class="stats-empty">Iroh sidecar not configured</div>';
             } else {
                 irohEl.innerHTML = '<div class="stats-empty">Loading...</div>';
+            }
+        }
+
+        // Zenoh Bridge
+        const zbEl = document.getElementById('debugZenohBridge');
+        if (zbEl) {
+            if (zenohBridge && zenohBridge.remote_peers != null) {
+                const endpoints = zenohBridge.remote_endpoints || [];
+                zbEl.innerHTML = `
+                    <div class="stats-mono-row stats-mono">Remote Peers: ${zenohBridge.remote_peers}</div>
+                    ${endpoints.length > 0 ? `<div class="stats-mono-row stats-mono">Endpoints: ${endpoints.map(e => this.statsEscapeHtml(e)).join('<br>')}</div>` : ''}
+                    <div class="stats-mono-row stats-mono">Received: ${zenohBridge.received ?? 0} | Written: ${zenohBridge.written ?? 0} | Self-Echo: ${zenohBridge.self_echo ?? 0}</div>
+                    <div class="stats-mono-row stats-mono">Verified: ${zenohBridge.sub_verified ?? 0} | Rejected: ${zenohBridge.sub_rejected ?? 0} | Duplicates: ${zenohBridge.duplicates ?? 0}</div>
+                    <div class="stats-mono-row stats-mono">CH Written: ${zenohBridge.ch_written ?? 0} | CH Buffer: ${zenohBridge.ch_buffer ?? 0}</div>
+                `;
+            } else if (zenohBridge && zenohBridge.status === 'not_configured') {
+                zbEl.innerHTML = '<div class="stats-empty">Zenoh bridge not configured</div>';
+            } else {
+                zbEl.innerHTML = '<div class="stats-empty">Loading...</div>';
             }
         }
 
