@@ -2379,10 +2379,32 @@
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
+        .archive-region-wrapper {
+            max-height: 500px;
+            overflow-y: auto;
+            border: 1px solid rgba(128,128,128,0.15);
+            border-radius: 6px;
+        }
+        .archive-region-wrapper::-webkit-scrollbar {
+            width: 6px;
+        }
+        .archive-region-wrapper::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .archive-region-wrapper::-webkit-scrollbar-thumb {
+            background: rgba(128,128,128,0.3);
+            border-radius: 3px;
+        }
         .archive-region-table {
             width: 100%;
             border-collapse: collapse;
             font-size: 13px;
+        }
+        .archive-region-table thead {
+            position: sticky;
+            top: 0;
+            background: var(--card-bg, #1e293b);
+            z-index: 1;
         }
         .archive-region-table th {
             text-align: left;
