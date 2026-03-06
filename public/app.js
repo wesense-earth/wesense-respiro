@@ -11044,7 +11044,6 @@ class Respiro {
         }
 
         peersEl.textContent = `${liveCount} / ${syncCount} / ${archiveCount}`;
-        peersSubEl.textContent = 'Live / Sync / Archive';
 
         // Hero: Devices Online
         const devicesEl = document.getElementById('statsDevices');
