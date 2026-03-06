@@ -1553,6 +1553,75 @@ if (ORBITDB_URL) {
     app.get('/api/stats/replication', (req, res) => res.json({ regions: [] }));
 }
 
+// Gateway archive stats proxy (gated on GATEWAY_URL env var)
+const GATEWAY_URL = process.env.GATEWAY_URL;
+if (GATEWAY_URL) {
+    console.log(`Gateway proxy enabled → ${GATEWAY_URL}`);
+
+    app.get('/api/stats/archive', async (req, res) => {
+        try {
+            const url = new URL('/archive/stats', GATEWAY_URL);
+            const response = await fetch(url.toString(), {
+                signal: AbortSignal.timeout(30000),
+            });
+            const archiveData = await response.json();
+
+            // Add ClickHouse comparison
+            let comparison = null;
+            try {
+                const chResult = await clickHouseClient.query({
+                    query: `
+                        SELECT
+                            count() as total,
+                            countIf(signature != '' AND geo_country != '' AND geo_subdivision != '') as archivable,
+                            min(toDate(timestamp)) as earliest,
+                            max(toDate(timestamp)) as latest,
+                            uniqExact(geo_country, geo_subdivision, toDate(timestamp)) as total_days
+                        FROM sensor_readings
+                        WHERE timestamp > '2020-01-01'
+                    `,
+                    format: 'JSONEachRow'
+                });
+                const rows = await chResult.json();
+                if (rows.length > 0) {
+                    const r = rows[0];
+                    comparison = {
+                        total_readings: r.total,
+                        archivable_readings: r.archivable,
+                        total_days: r.total_days,
+                        date_range: r.earliest && r.latest ? `${r.earliest} to ${r.latest}` : null,
+                    };
+                }
+            } catch (chErr) {
+                console.error('ClickHouse comparison query failed:', chErr.message);
+            }
+
+            res.json({ archive: archiveData, comparison });
+        } catch (error) {
+            console.error('Gateway archive stats proxy error:', error.message);
+            res.status(502).json({ error: 'Gateway unavailable' });
+        }
+    });
+
+    app.post('/api/archive/trigger', async (req, res) => {
+        try {
+            const url = new URL('/archive/trigger', GATEWAY_URL);
+            const response = await fetch(url.toString(), {
+                method: 'POST',
+                signal: AbortSignal.timeout(10000),
+            });
+            const data = await response.json();
+            res.status(response.status).json(data);
+        } catch (error) {
+            console.error('Gateway trigger proxy error:', error.message);
+            res.status(502).json({ error: 'Gateway unavailable' });
+        }
+    });
+} else {
+    app.get('/api/stats/archive', (req, res) => res.json({ status: 'not_configured' }));
+    app.post('/api/archive/trigger', (req, res) => res.json({ status: 'not_configured' }));
+}
+
 // Iroh Sidecar proxy endpoints (gated on IROH_SIDECAR_URL env var)
 const IROH_SIDECAR_URL = process.env.IROH_SIDECAR_URL;
 if (IROH_SIDECAR_URL) {

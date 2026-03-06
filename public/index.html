@@ -2358,6 +2358,89 @@
             }
         }
 
+        /* Archive stats table */
+        .archive-summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        .archive-summary-item {
+            text-align: center;
+        }
+        .archive-summary-value {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--text-primary, #fff);
+        }
+        .archive-summary-label {
+            font-size: 11px;
+            color: var(--text-muted, #94a3b8);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .archive-region-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        .archive-region-table th {
+            text-align: left;
+            padding: 6px 8px;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted, #94a3b8);
+            border-bottom: 1px solid rgba(128,128,128,0.2);
+            cursor: pointer;
+            user-select: none;
+        }
+        .archive-region-table th:hover {
+            color: var(--text-primary, #fff);
+        }
+        .archive-region-table th .sort-arrow {
+            font-size: 10px;
+            margin-left: 2px;
+        }
+        .archive-region-table td {
+            padding: 5px 8px;
+            border-bottom: 1px solid rgba(128,128,128,0.08);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+        }
+        .archive-region-table tr:last-child td {
+            border-bottom: none;
+        }
+        .archive-gap-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-left: 4px;
+        }
+        .archive-gap-indicator.no-gaps { background: #22c55e; }
+        .archive-gap-indicator.has-gaps { background: #f59e0b; }
+        .archive-comparison {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid rgba(128,128,128,0.15);
+            font-size: 12px;
+            color: var(--text-muted, #94a3b8);
+        }
+        .archive-comparison .bar-track {
+            height: 6px;
+            background: rgba(128,128,128,0.15);
+            border-radius: 3px;
+            margin-top: 4px;
+            overflow: hidden;
+        }
+        .archive-comparison .bar-fill {
+            height: 100%;
+            background: #3b82f6;
+            border-radius: 3px;
+            transition: width 0.3s ease;
+        }
+
         /* ============= NEW DASHBOARD LAYOUT ============= */
 
         /* Astronomy Bar */
@@ -8797,6 +8880,24 @@
                 <div class="stats-card" style="margin-bottom:24px">
                     <div class="stats-card-title">Resources</div>
                     <div id="statsContainers">
+                        <div class="stats-empty">Loading...</div>
+                    </div>
+                </div>
+
+                <!-- Archive section -->
+                <div class="stats-card" style="margin-bottom:24px" id="statsArchiveCard">
+                    <div class="stats-card-title" style="display:flex;align-items:center;justify-content:space-between">
+                        Archive
+                        <button class="stats-refresh-btn" id="archiveTriggerBtn" title="Trigger archive cycle" style="display:none">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="7 10 12 15 17 10"/>
+                                <line x1="12" y1="15" x2="12" y2="3"/>
+                            </svg>
+                            Archive Now
+                        </button>
+                    </div>
+                    <div id="statsArchive">
                         <div class="stats-empty">Loading...</div>
                     </div>
                 </div>
