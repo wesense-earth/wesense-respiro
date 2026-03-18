@@ -10859,7 +10859,9 @@ class Respiro {
     }
 
     formatDataSource(source) {
-        // Convert "MESHTASTIC" to "Meshtastic", "WESENSE" to "WeSense"
+        // Convert data_source keys to friendly display names.
+        // Known sources get branded names; unknown sources get auto-formatted
+        // (e.g. "GOVT_AQ" -> "Govt Aq") so new sources appear without code changes.
         if (!source) return null;
         const map = {
             'MESHTASTIC': 'Meshtastic',
@@ -10870,14 +10872,34 @@ class Respiro {
             'TTN': 'WeSense TTN',
             'CHIRPSTACK': 'WeSense ChirpStack',
             'HOMEASSISTANT': 'Home Assistant',
+            'GOVT_AQ': 'Government AQ',
             'meshtastic-public': 'Meshtastic Public',
             'meshtastic-community': 'Meshtastic Community',
             'meshtastic-downlink': 'Meshtastic Downlink',
             'ttn': 'WeSense TTN',
             'chirpstack': 'WeSense ChirpStack',
-            'homeassistant': 'Home Assistant'
+            'homeassistant': 'Home Assistant',
+            'govt-aq': 'Government AQ'
         };
-        return map[source] || source;
+        if (map[source]) return map[source];
+        // Auto-format unknown sources: "NEW_SOURCE_NAME" -> "New Source Name"
+        return source.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    }
+
+    getSourceDotClass(source) {
+        // CSS class for source indicator dots. Known sources get branded colours;
+        // unknown sources get 'default' (grey). New sources appear automatically
+        // without needing CSS changes — add a named class later for branding.
+        const map = {
+            'WESENSE': 'wesense',
+            'CHIRPSTACK': 'chirpstack',
+            'MESHTASTIC_DOWNLINK': 'meshtastic-public',
+            'MESHTASTIC_COMMUNITY': 'meshtastic-community',
+            'HOMEASSISTANT': 'homeassistant',
+            'TTN': 'ttn',
+            'GOVT_AQ': 'govt-aq',
+        };
+        return map[source] || 'default';
     }
     
     drawSparklines(sensor) {
@@ -11073,31 +11095,15 @@ class Respiro {
             coverageSubEl.textContent = 'countries / regions';
         }
 
-        // Data Sources
+        // Data Sources — dynamically renders all sources from the backend
         const sourcesEl = document.getElementById('statsDataSources');
         if (overview.data_sources && Object.keys(overview.data_sources).length > 0) {
-            const sourceNames = {
-                'WESENSE': 'WeSense WiFi',
-                'CHIRPSTACK': 'WeSense ChirpStack',
-                'MESHTASTIC_DOWNLINK': 'Meshtastic Downlink',
-                'MESHTASTIC_COMMUNITY': 'Meshtastic Community',
-                'HOMEASSISTANT': 'Home Assistant',
-                'TTN': 'WeSense TTN'
-            };
-            const sourceDotClass = {
-                'WESENSE': 'wesense',
-                'CHIRPSTACK': 'chirpstack',
-                'MESHTASTIC_DOWNLINK': 'meshtastic-public',
-                'MESHTASTIC_COMMUNITY': 'meshtastic-community',
-                'HOMEASSISTANT': 'homeassistant',
-                'TTN': 'ttn'
-            };
             sourcesEl.innerHTML = Object.entries(overview.data_sources)
                 .map(([key, count]) => `
                     <div class="stats-source-row">
                         <span class="stats-source-name">
-                            <span class="source-dot ${sourceDotClass[key] || 'default'}"></span>
-                            ${sourceNames[key] || key}
+                            <span class="source-dot ${this.getSourceDotClass(key)}"></span>
+                            ${this.formatDataSource(key) || key}
                         </span>
                         <span class="stats-source-count">${count}</span>
                     </div>
@@ -11187,30 +11193,26 @@ class Respiro {
     }
 
     renderContribution(contribution, nodes) {
-        // All expected sources — always shown, 0 if inactive
-        const allSources = [
-            { key: 'WESENSE', name: 'WeSense WiFi', dot: 'wesense' },
-            { key: 'CHIRPSTACK', name: 'WeSense ChirpStack', dot: 'chirpstack' },
-            { key: 'TTN', name: 'WeSense TTN', dot: 'ttn' },
-            { key: 'MESHTASTIC_COMMUNITY', name: 'Meshtastic Community', dot: 'meshtastic-community' },
-            { key: 'MESHTASTIC_DOWNLINK', name: 'Meshtastic Downlink', dot: 'meshtastic-public' },
-            { key: 'HOMEASSISTANT', name: 'Home Assistant', dot: 'homeassistant' },
-        ];
-
+        // Dynamically discover all sources from the contribution data
+        // rather than hardcoding a fixed list
         const renderSourceRows = (sources) => {
-            return allSources.map(({ key, name, dot }) => {
-                const data = sources?.[key];
-                const count = data ? data.devices : 0;
-                return `
-                    <div class="stats-source-row">
-                        <span class="stats-source-name">
-                            <span class="source-dot ${dot}"></span>
-                            ${name}
-                        </span>
-                        <span class="stats-source-count${count === 0 ? ' style="color:var(--text-muted)"' : ''}">${count} <span style="color:var(--text-muted);font-weight:400;font-size:12px">devices</span></span>
-                    </div>
-                `;
-            }).join('');
+            if (!sources || Object.keys(sources).length === 0) {
+                return '<div class="stats-empty">No data</div>';
+            }
+            return Object.entries(sources)
+                .sort(([a], [b]) => (this.formatDataSource(a) || a).localeCompare(this.formatDataSource(b) || b))
+                .map(([key, data]) => {
+                    const count = data ? data.devices : 0;
+                    return `
+                        <div class="stats-source-row">
+                            <span class="stats-source-name">
+                                <span class="source-dot ${this.getSourceDotClass(key)}"></span>
+                                ${this.formatDataSource(key) || key}
+                            </span>
+                            <span class="stats-source-count${count === 0 ? ' style="color:var(--text-muted)"' : ''}">${count} <span style="color:var(--text-muted);font-weight:400;font-size:12px">devices</span></span>
+                        </div>
+                    `;
+                }).join('');
         };
 
         // My Contribution
