@@ -7848,7 +7848,7 @@ class Respiro {
                                     const name = dev.node_name || deviceId;
                                     const shortId = deviceId.length > 12 ? deviceId.slice(-8) : deviceId;
                                     const displayName = name !== deviceId ? name : shortId;
-                                    const hwInfo = `${dev.board_model || 'Unknown'} / ${dev.sensor_model || 'Unknown'}`;
+                                    const hwInfo = `${this.formatBoardModel(dev.board_model)} / ${dev.sensor_model || 'Unknown'}`;
                                     return `<tr>
                                         <td style="padding: 2px 0; font-size: 12px;" title="${deviceId}">${displayName}<br><span style="color: #999; font-size: 10px;">${hwInfo}</span></td>
                                         <td style="padding: 2px 0; text-align: right; font-size: 12px; vertical-align: top;">${dev.avg_value.toFixed(1)}${unitParam}</td>
@@ -7933,6 +7933,7 @@ class Respiro {
                 maxZoom: 19,        // Allow overzooming up to zoom 19
                 paint_rules: [
                     // ADM0 (countries) at zoom 0-1
+                    // Note: maxzoom is EXCLUSIVE in protomaps-leaflet (Mapbox GL spec)
                     {
                         dataLayer: 'adm0',
                         symbolizer: new protomapsL.PolygonSymbolizer({
@@ -7940,7 +7941,7 @@ class Respiro {
                             stroke: '#333',
                             width: 2
                         }),
-                        maxzoom: 1
+                        maxzoom: 2
                     },
                     // ADM1 (states/regions) at zoom 2-4
                     {
@@ -7951,7 +7952,7 @@ class Respiro {
                             width: 1.5
                         }),
                         minzoom: 2,
-                        maxzoom: 4
+                        maxzoom: 5
                     },
                     // ADM2 (districts) at zoom 5-7
                     {
@@ -7962,7 +7963,7 @@ class Respiro {
                             width: 1
                         }),
                         minzoom: 5,
-                        maxzoom: 7
+                        maxzoom: 8
                     },
                     // ADM3 (sub-districts) at zoom 8+ (will overzoom beyond tile maxzoom)
                     {
@@ -8989,6 +8990,7 @@ class Respiro {
 
     updateBoardFilters() {
         // Collect unique board types and count sensors for each from time-filtered sensors
+        // Uses raw board values as keys (for filtering) with friendly display names
         const boardCounts = new Map();
         const filteredSensors = this.getFilteredSensorsExcluding(['board']);
 
@@ -9007,21 +9009,24 @@ class Respiro {
         // Remove all except 'All' button
         boardFilters.querySelectorAll('.filter-btn:not([data-filter-value="all"])').forEach(btn => btn.remove());
 
-        // Sort board types - put UNKNOWN first, then alphabetically
+        // Sort by friendly display name, with Unknown first
         const sortedBoards = boardTypes.sort((a, b) => {
             if (a === 'UNKNOWN') return -1;
             if (b === 'UNKNOWN') return 1;
-            return a.localeCompare(b);
+            const nameA = this.formatBoardModel(a);
+            const nameB = this.formatBoardModel(b);
+            return nameA.localeCompare(nameB);
         });
 
-        // Add button for each unique board type with count
+        // Add button for each unique board type with count and friendly name
         sortedBoards.forEach(board => {
             const count = boardCounts.get(board);
+            const displayName = this.formatBoardModel(board);
             const btn = document.createElement('button');
             btn.className = 'filter-btn';
             btn.dataset.filterType = 'board';
             btn.dataset.filterValue = board;
-            btn.textContent = `${board} (${count})`;
+            btn.textContent = `${displayName} (${count})`;
             boardFilters.appendChild(btn);
         });
     }
@@ -9728,7 +9733,15 @@ class Respiro {
                     }
 
                     // Restore map position (layer changes can sometimes shift the view)
+                    // Use invalidateSize first to ensure the container dimensions are current,
+                    // then defer setView to run after Leaflet finishes processing layer changes
+                    self.map.invalidateSize({ pan: false });
                     self.map.setView(currentCenter, currentZoom, { animate: false });
+                    // Deferred restore as a safety net — Leaflet may process layer
+                    // add/remove events asynchronously which can shift the view
+                    setTimeout(() => {
+                        self.map.setView(currentCenter, currentZoom, { animate: false });
+                    }, 50);
 
                     button.classList.remove('loading');
                 });
@@ -10186,8 +10199,10 @@ class Respiro {
         if (!dataSource || !boardModel) {
             const deviceType = this.getDeviceType(sensor);
             dataSource = dataSource || deviceType.type || 'Unknown';
-            boardModel = boardModel || deviceType.board || 'Unknown';
+            boardModel = boardModel || deviceType.board || null;
         }
+        // Use friendly board name for display
+        boardModel = this.formatBoardModel(boardModel);
 
         // Format the data source for display
         const formattedSource = this.formatDataSource(dataSource) || dataSource;
@@ -10884,6 +10899,53 @@ class Respiro {
         if (map[source]) return map[source];
         // Auto-format unknown sources: "NEW_SOURCE_NAME" -> "New Source Name"
         return source.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    }
+
+    formatBoardModel(board) {
+        // Convert board_model values to friendly display names.
+        // Known boards get friendly names; unknown boards get auto-formatted.
+        if (!board) return 'Unknown';
+        const map = {
+            'UNKNOWN': 'Unknown',
+            'tbeam': 'LilyGo T-Beam',
+            'TBEAM': 'LilyGo T-Beam',
+            't-beam': 'LilyGo T-Beam',
+            'T-BEAM': 'LilyGo T-Beam',
+            'tbeam_v1.1': 'LilyGo T-Beam v1.1',
+            'tbeam_v1.2': 'LilyGo T-Beam v1.2',
+            'tlora': 'LilyGo T-LoRa',
+            'TLORA': 'LilyGo T-LoRa',
+            'tlora_v2_1_1p6': 'LilyGo T-LoRa v2.1',
+            'tlora_v2_1_1p8': 'LilyGo T-LoRa v2.1',
+            'heltec_v3': 'Heltec V3',
+            'HELTEC_V3': 'Heltec V3',
+            'heltec-v3': 'Heltec V3',
+            'heltec_v2': 'Heltec V2',
+            'heltec_wireless_tracker': 'Heltec Wireless Tracker',
+            'heltec_wireless_paper': 'Heltec Wireless Paper',
+            'rak4631': 'RAK WisBlock 4631',
+            'RAK4631': 'RAK WisBlock 4631',
+            'rak11200': 'RAK WisBlock 11200',
+            'station-g2': 'Station G2',
+            'STATION_G2': 'Station G2',
+            'nano-g2-ultra': 'Nano G2 Ultra',
+            'wio-tracker-wm1110': 'Seeed Wio Tracker WM1110',
+            'esp32-s3': 'ESP32-S3',
+            'ESP32-S3': 'ESP32-S3',
+            'esp32-c3': 'ESP32-C3',
+            'ESP32-C3': 'ESP32-C3',
+            'esp32-c6': 'ESP32-C6',
+            'ESP32-C6': 'ESP32-C6',
+            'esp32': 'ESP32',
+            'ESP32': 'ESP32',
+            'tracker-t1000-e': 'LilyGo Tracker T1000-E',
+            'pico': 'Raspberry Pi Pico',
+            'PICO': 'Raspberry Pi Pico',
+            'rp2040-lora': 'RP2040 LoRa',
+        };
+        if (map[board]) return map[board];
+        // Auto-format: "some_board_name" -> "Some Board Name"
+        return board.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
     }
 
     getSourceDotClass(source) {
@@ -12002,7 +12064,7 @@ class Respiro {
                 <div class="device-meta">
                     <div class="meta-item"><strong>Source:</strong> ${device.data_source || 'Unknown'}</div>
                     <div class="meta-item"><strong>Location:</strong> ${locationStr}</div>
-                    <div class="meta-item"><strong>Board:</strong> ${device.board_model || 'Unknown'}</div>
+                    <div class="meta-item"><strong>Board:</strong> ${this.formatBoardModel(device.board_model)}</div>
                     <div class="meta-item"><strong>Readings:</strong> ${device.reading_count?.toLocaleString() || 0}</div>
                     ${device.node_info ? `<div class="meta-item"><strong>Setup:</strong> ${device.node_info}</div>` : ''}
                     ${device.node_info_url ? `<div class="meta-item"><a href="${device.node_info_url}" target="_blank" rel="noopener" style="color: #60a5fa;">View documentation</a></div>` : ''}
