@@ -7678,8 +7678,6 @@ class Respiro {
 
     // Region Overlay implementation per architecture doc Section 6.2
     async enableRegionView() {
-        console.log('Enabling region view (architecture Section 6.2)...');
-
         // Hide marker clusters when region view is active
         if (this.markerCluster) {
             this.map.removeLayer(this.markerCluster);
@@ -7687,12 +7685,6 @@ class Respiro {
 
         // Load data FIRST, before creating layer, so colors are ready
         await this.refreshRegionData();
-
-        console.log('Region data loaded before layer creation:', {
-            dataCount: Object.keys(this.regionalData || {}).length,
-            sampleKeys: Object.keys(this.regionalData || {}).slice(0, 3),
-            zoom: this.map.getZoom()
-        });
 
         // Create PMTiles boundary layer with dynamic coloring (data is now ready)
         this.createPMTilesLayer();
@@ -7906,23 +7898,24 @@ class Respiro {
     }
 
     createPMTilesLayer() {
-        // Check required libraries
         if (typeof protomapsL === 'undefined') {
             console.error('protomaps-leaflet not loaded! Check script tags in index.html');
             return;
         }
-        if (typeof pmtiles === 'undefined') {
-            console.warn('pmtiles library not loaded separately - protomaps-leaflet bundles it');
-        }
-
-        console.log('Creating PMTiles layer...');
 
         const self = this;
 
         try {
             // Dynamic fill function that colors regions based on sensor data
+            // Must catch errors — an unhandled throw inside the fill function
+            // silently aborts protomaps-leaflet's entire tile render
             const dynamicFill = (zoom, feature) => {
-                return self.getRegionColor(feature);
+                try {
+                    return self.getRegionColor(feature);
+                } catch (err) {
+                    console.error('Error in region fill:', err);
+                    return 'rgba(180, 180, 180, 0.4)';
+                }
             };
 
             // Multi-layer config with dynamic colors
@@ -7981,11 +7974,9 @@ class Respiro {
 
             this.regionLayer = protomapsL.leafletLayer(layerConfig);
             this.regionLayer.addTo(this.map);
-            console.log('PMTiles region layer added to map');
 
         } catch (err) {
             console.error('Error creating PMTiles layer:', err);
-            console.error('  Stack:', err.stack);
         }
     }
 
@@ -8047,25 +8038,10 @@ class Respiro {
             // Force layer redraw using rerenderTiles()
             // protomaps-leaflet caches rendered Canvas tiles, so we need to force a re-render
             if (this.regionLayer) {
-                // Debug: log available methods once
-                if (!this._loggedLayerMethods) {
-                    console.log('RegionLayer methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(this.regionLayer)));
-                    this._loggedLayerMethods = true;
-                }
-
-                // Clear debug caches so we log features on next render
-                this._debuggedFeatures = new Set();
-                this._matchedRegions = new Set();
-                this._fillDebugCount = 0;
-                this._colorDebugCount = 0;
-
-                // Use rerenderTiles() to redraw all visible tiles with new data
                 if (this.regionLayer.rerenderTiles) {
-                    console.log('Calling rerenderTiles() to update colors...');
                     this.regionLayer.rerenderTiles();
                 } else {
                     // Fallback: remove and re-add layer to force re-render
-                    console.log('rerenderTiles not available, removing and re-adding layer...');
                     this.map.removeLayer(this.regionLayer);
                     this.regionLayer.addTo(this.map);
                 }
@@ -8091,30 +8067,6 @@ class Respiro {
 
         const props = feature?.props || {};
         const regionId = props.region_id || '';
-        const layerName = feature?.layerName || 'unknown';
-
-        // Debug: Log data availability
-        if (!this._colorDebugCount) this._colorDebugCount = 0;
-        if (this._colorDebugCount < 3) {
-            console.log('getRegionColor state:', {
-                hasRegionalData: !!this.regionalData,
-                regionDataKeys: Object.keys(this.regionalData || {}).length,
-                regionId,
-                match: !!(this.regionalData && this.regionalData[regionId])
-            });
-            this._colorDebugCount++;
-        }
-
-        // Debug: log first few features to understand what we're getting
-        if (!this._debuggedFeatures) {
-            this._debuggedFeatures = new Set();
-        }
-        if (this._debuggedFeatures.size < 5 && regionId && !this._debuggedFeatures.has(regionId)) {
-            this._debuggedFeatures.add(regionId);
-            console.log(`Feature from layer ${layerName}: region_id=${regionId}, props:`, props);
-            console.log(`  Available data keys (first 5):`, Object.keys(this.regionalData || {}).slice(0, 5));
-            console.log(`  Match found:`, !!(this.regionalData && this.regionalData[regionId]));
-        }
 
         // No data loaded yet - show gray
         if (!this.regionalData || Object.keys(this.regionalData).length === 0) {
@@ -8124,14 +8076,7 @@ class Respiro {
         // Direct region_id match (both PMTiles and server use same format)
         if (regionId && this.regionalData[regionId]) {
             const value = this.regionalData[regionId].avg;
-            const color = this.getColorForRegionMetric(this.regionMetric, value);
-            // Log matches (limited to avoid spam)
-            if (!this._matchedRegions) this._matchedRegions = new Set();
-            if (!this._matchedRegions.has(regionId)) {
-                this._matchedRegions.add(regionId);
-                console.log(`[MATCH] ${regionId} = ${value}${this.regionUnit} → ${color}`);
-            }
-            return color;
+            return this.getColorForRegionMetric(this.regionMetric, value);
         }
 
         // No match - show gray (gap in coverage = no sensor data for this region)
