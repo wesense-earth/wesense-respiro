@@ -7925,8 +7925,10 @@ class Respiro {
                 maxNativeZoom: 10,  // PMTiles has tiles up to zoom 10
                 maxZoom: 19,        // Allow overzooming up to zoom 19
                 paint_rules: [
+                    // protomaps-leaflet zoom checks are INCLUSIVE:
+                    //   minzoom: zoom >= minzoom to render
+                    //   maxzoom: zoom <= maxzoom to render
                     // ADM0 (countries) at zoom 0-1
-                    // Note: maxzoom is EXCLUSIVE in protomaps-leaflet (Mapbox GL spec)
                     {
                         dataLayer: 'adm0',
                         symbolizer: new protomapsL.PolygonSymbolizer({
@@ -7934,7 +7936,7 @@ class Respiro {
                             stroke: '#333',
                             width: 2
                         }),
-                        maxzoom: 2
+                        maxzoom: 1
                     },
                     // ADM1 (states/regions) at zoom 2-4
                     {
@@ -7945,7 +7947,7 @@ class Respiro {
                             width: 1.5
                         }),
                         minzoom: 2,
-                        maxzoom: 5
+                        maxzoom: 4
                     },
                     // ADM2 (districts) at zoom 5-7
                     {
@@ -7956,7 +7958,7 @@ class Respiro {
                             width: 1
                         }),
                         minzoom: 5,
-                        maxzoom: 8
+                        maxzoom: 7
                     },
                     // ADM3 (sub-districts) at zoom 8-10
                     {
@@ -7967,7 +7969,7 @@ class Respiro {
                             width: 0.8
                         }),
                         minzoom: 8,
-                        maxzoom: 11
+                        maxzoom: 10
                     },
                     // ADM4 (localities) at zoom 11+
                     {
