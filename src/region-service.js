@@ -803,6 +803,9 @@ class RegionService {
                 WHERE cache.device_id IS NULL
                    OR abs(cl.lat - cache.latitude) > 0.001
                    OR abs(cl.lon - cache.longitude) > 0.001
+                   -- Re-check devices with empty region IDs (boundaries may not
+                   -- have been loaded when the device was first cached)
+                   OR (cache.region_adm0_id = '' AND cache.region_adm1_id = '')
             `;
 
             const result = await this.clickhouse.query({
