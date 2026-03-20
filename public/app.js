@@ -7903,34 +7903,17 @@ class Respiro {
             return;
         }
 
-        // Verify PMTiles file is accessible before creating layer
-        fetch('/regions.pmtiles', { method: 'HEAD' }).then(r => {
-            if (!r.ok) {
-                console.error(`PMTiles file not accessible: HTTP ${r.status}`);
-            } else {
-                console.log(`PMTiles file OK: ${r.status}, ${r.headers.get('content-length')} bytes, accept-ranges: ${r.headers.get('accept-ranges')}`);
-            }
-        }).catch(err => console.error('PMTiles file fetch failed:', err));
-
         const self = this;
 
         try {
             // Dynamic fill function that colors regions based on sensor data
             // Must catch errors — an unhandled throw inside the fill function
             // silently aborts protomaps-leaflet's entire tile render
-            let fillErrorCount = 0;
             const dynamicFill = (zoom, feature) => {
                 try {
                     return self.getRegionColor(feature);
                 } catch (err) {
-                    fillErrorCount++;
-                    if (fillErrorCount <= 5) {
-                        console.error('Error in region fill:', err.message, err.stack);
-                        console.error('  feature:', JSON.stringify(feature?.props || {}));
-                        console.error('  zoom:', zoom);
-                        console.error('  regionalData keys:', Object.keys(self.regionalData || {}).length);
-                        console.error('  regionMetric:', self.regionMetric);
-                    }
+                    console.error('Error in region fill:', err);
                     return 'rgba(180, 180, 180, 0.4)';
                 }
             };

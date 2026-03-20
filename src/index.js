@@ -645,6 +645,11 @@ app.use(express.json());
 // Serve static files with appropriate caching (per architecture Section 8.2)
 // PMTiles uses HTTP range requests, so browser caches tile chunks efficiently
 app.use(express.static(path.join(__dirname, '../public'), {
+    // Disable ETags for all static files — PMTiles range requests break when a
+    // reverse proxy (nginx/SWAG/Caddy) generates its own ETags that conflict
+    // with Express's ETags, causing protomaps-leaflet to abort tile loading.
+    // Cache-Control headers handle caching instead.
+    etag: false,
     setHeaders: (res, filePath) => {
         if (filePath.endsWith('.pmtiles')) {
             // PMTiles: aggressive caching (immutable, long TTL)
