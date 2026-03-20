@@ -2226,9 +2226,10 @@ function generatePMTiles(pmtilesPath, boundariesDir, skipTippecanoe = false) {
                 ...layers,
                 '--minimum-zoom=0',
                 '--maximum-zoom=10',
-                '--simplification=4',
+                '--simplification=1',
                 '--no-feature-limit',
                 '--no-tile-size-limit',
+                '--no-tiny-polygon-reduction',
                 '--force'
             ], { cwd: boundariesDir });
 

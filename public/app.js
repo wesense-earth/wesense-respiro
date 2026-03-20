@@ -7929,8 +7929,6 @@ class Respiro {
                 pane: 'regionPane',
                 maxNativeZoom: 10,  // PMTiles has tiles up to zoom 10
                 maxZoom: 19,        // Allow overzooming up to zoom 19
-                levelDiff: 0,       // Fetch data tile at same zoom as display (default 2 causes small polygons to vanish — e.g. Auckland ADM2 absent from z≤4 tiles)
-                maxDataZoom: 10,    // PMTiles max zoom; overzoom beyond this
                 paint_rules: [
                     // protomaps-leaflet zoom checks are INCLUSIVE:
                     //   minzoom: zoom >= minzoom to render
