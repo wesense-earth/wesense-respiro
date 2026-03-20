@@ -34,20 +34,24 @@ class RegionService {
      *
      * Zoom mapping:
      * - Zoom 0-1:  ADM0 (countries)
-     * - Zoom 2-4:  ADM1 (states/regions)
-     * - Zoom 5-7:  ADM2 (districts)
-     * - Zoom 8-10: ADM3 (sub-districts) - 81 countries have this
-     * - Zoom 11+:  ADM4 (localities) - 21 countries have this
+     * - Zoom 2-6:  ADM1 (states/regions)
+     * - Zoom 7-9:  ADM2 (districts)
+     * - Zoom 10-12: ADM3 (sub-districts) - 81 countries have this
+     * - Zoom 13+:  ADM4 (localities) - 21 countries have this
      *
      * Note: ADM3/ADM4 may not exist for all regions. The precomputed data
      * will simply be empty for regions without finer admin levels.
+     *
+     * Zoom ranges account for protomaps-leaflet levelDiff=2 (data tiles are
+     * 2 zoom levels below display zoom). Small ADM2 polygons (e.g. Auckland
+     * local board areas) need higher zoom data tiles to be visible.
      */
     getAdminLevelForZoom(zoom) {
-        // PMTiles has ADM0-3
         if (zoom <= 1) return 0;
-        if (zoom <= 4) return 1;
-        if (zoom <= 7) return 2;
-        return 3;  // ADM3 for zoom 8+
+        if (zoom <= 6) return 1;
+        if (zoom <= 9) return 2;
+        if (zoom <= 12) return 3;
+        return 4;
     }
 
     /**

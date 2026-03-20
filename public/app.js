@@ -7943,7 +7943,7 @@ class Respiro {
                         }),
                         maxzoom: 1
                     },
-                    // ADM1 (states/regions) at zoom 2-4
+                    // ADM1 (states/regions) at zoom 2-6
                     {
                         dataLayer: 'adm1',
                         symbolizer: new protomapsL.PolygonSymbolizer({
@@ -7952,9 +7952,9 @@ class Respiro {
                             width: 1.5
                         }),
                         minzoom: 2,
-                        maxzoom: 4
+                        maxzoom: 6
                     },
-                    // ADM2 (districts) at zoom 5-7
+                    // ADM2 (districts) at zoom 7-9
                     {
                         dataLayer: 'adm2',
                         symbolizer: new protomapsL.PolygonSymbolizer({
@@ -7962,10 +7962,10 @@ class Respiro {
                             stroke: '#555',
                             width: 1
                         }),
-                        minzoom: 5,
-                        maxzoom: 7
+                        minzoom: 7,
+                        maxzoom: 9
                     },
-                    // ADM3 (sub-districts) at zoom 8-10
+                    // ADM3 (sub-districts) at zoom 10-12
                     {
                         dataLayer: 'adm3',
                         symbolizer: new protomapsL.PolygonSymbolizer({
@@ -7973,8 +7973,8 @@ class Respiro {
                             stroke: '#666',
                             width: 0.8
                         }),
-                        minzoom: 8,
-                        maxzoom: 10
+                        minzoom: 10,
+                        maxzoom: 12
                     },
                     // ADM4 (localities) at zoom 11+
                     {
@@ -8005,8 +8005,8 @@ class Respiro {
 
         // Build request key - zoom, metric, deployment filter, and time settings
         // Map zoom to admin level for cache key (matches server logic)
-        // Zoom 0-1: ADM0, Zoom 2-4: ADM1, Zoom 5-7: ADM2, Zoom 8+: ADM3
-        const adminLevel = zoom <= 1 ? 0 : zoom <= 4 ? 1 : zoom <= 7 ? 2 : zoom <= 10 ? 3 : 4;
+        // Zoom 0-1: ADM0, Zoom 2-6: ADM1, Zoom 7-9: ADM2, Zoom 10-12: ADM3, Zoom 13+: ADM4
+        const adminLevel = zoom <= 1 ? 0 : zoom <= 6 ? 1 : zoom <= 9 ? 2 : zoom <= 12 ? 3 : 4;
         const deploymentTypes = Array.from(this.regionDeploymentTypes).sort().join(',');
 
         // Include time parameters in request key
