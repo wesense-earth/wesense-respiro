@@ -2226,7 +2226,7 @@ function generatePMTiles(pmtilesPath, boundariesDir, skipTippecanoe = false) {
                 ...layers,
                 '--minimum-zoom=0',
                 '--maximum-zoom=10',
-                '--simplification=10',
+                '--simplification=4',
                 '--no-feature-limit',
                 '--no-tile-size-limit',
                 '--force'
