@@ -652,10 +652,10 @@ app.use(express.static(path.join(__dirname, '../public'), {
     etag: false,
     setHeaders: (res, filePath) => {
         if (filePath.endsWith('.pmtiles')) {
-            // PMTiles: aggressive caching (immutable, long TTL)
+            // PMTiles: cache for 1 hour — file can be regenerated when boundaries update
             res.set('Accept-Ranges', 'bytes');
             res.set('Access-Control-Allow-Origin', '*');
-            res.set('Cache-Control', 'public, max-age=31536000, immutable');
+            res.set('Cache-Control', 'public, max-age=3600');
         } else if (filePath.endsWith('.html')) {
             // HTML: no cache (may change frequently)
             res.set('Cache-Control', 'no-cache');
