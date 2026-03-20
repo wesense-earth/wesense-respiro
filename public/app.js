@@ -7920,7 +7920,7 @@ class Respiro {
 
             // Multi-layer config with dynamic colors
             const layerConfig = {
-                url: '/api/tiles/{z}/{x}/{y}.mvt',
+                url: '/api/tiles/{z}/{x}/{y}.mvt?v=1',
                 pane: 'regionPane',
                 maxNativeZoom: 10,  // PMTiles has tiles up to zoom 10
                 maxZoom: 19,        // Allow overzooming up to zoom 19

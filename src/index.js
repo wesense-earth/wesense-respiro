@@ -632,11 +632,11 @@ const app = express();
 // Exclude PMTiles from compression - it breaks HTTP Range requests required by PMTiles
 app.use(compression({
     filter: (req, res) => {
-        // Don't compress PMTiles - they need proper Range request support
-        if (req.url.endsWith('.pmtiles')) {
+        // Don't compress binary tile data — reverse proxies can double-compress
+        // or strip Content-Encoding, corrupting protobuf tile data
+        if (req.url.endsWith('.pmtiles') || req.url.endsWith('.mvt')) {
             return false;
         }
-        // Use default compression filter for everything else
         return compression.filter(req, res);
     }
 }));
