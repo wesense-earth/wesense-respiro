@@ -7911,7 +7911,12 @@ class Respiro {
             // silently aborts protomaps-leaflet's entire tile render
             const dynamicFill = (zoom, feature) => {
                 try {
-                    return self.getRegionColor(feature);
+                    const color = self.getRegionColor(feature);
+                    const rid = feature?.props?.region_id || '';
+                    if (rid.includes('NZL')) {
+                        console.log(`[FILL] z=${zoom} layer=${feature?.layerName} id=${rid} color=${color} dataKeys=${Object.keys(self.regionalData||{}).length}`);
+                    }
+                    return color;
                 } catch (err) {
                     console.error('Error in region fill:', err);
                     return 'rgba(180, 180, 180, 0.4)';
