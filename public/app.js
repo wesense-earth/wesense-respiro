@@ -7958,7 +7958,7 @@ class Respiro {
                         minzoom: 5,
                         maxzoom: 8
                     },
-                    // ADM3 (sub-districts) at zoom 8+ (will overzoom beyond tile maxzoom)
+                    // ADM3 (sub-districts) at zoom 8-10
                     {
                         dataLayer: 'adm3',
                         symbolizer: new protomapsL.PolygonSymbolizer({
@@ -7966,7 +7966,18 @@ class Respiro {
                             stroke: '#666',
                             width: 0.8
                         }),
-                        minzoom: 8
+                        minzoom: 8,
+                        maxzoom: 11
+                    },
+                    // ADM4 (localities) at zoom 11+
+                    {
+                        dataLayer: 'adm4',
+                        symbolizer: new protomapsL.PolygonSymbolizer({
+                            fill: dynamicFill,
+                            stroke: '#777',
+                            width: 0.5
+                        }),
+                        minzoom: 11
                     }
                 ],
                 label_rules: []
@@ -7988,7 +7999,7 @@ class Respiro {
         // Build request key - zoom, metric, deployment filter, and time settings
         // Map zoom to admin level for cache key (matches server logic)
         // Zoom 0-1: ADM0, Zoom 2-4: ADM1, Zoom 5-7: ADM2, Zoom 8+: ADM3
-        const adminLevel = zoom <= 1 ? 0 : zoom <= 4 ? 1 : zoom <= 7 ? 2 : 3;
+        const adminLevel = zoom <= 1 ? 0 : zoom <= 4 ? 1 : zoom <= 7 ? 2 : zoom <= 10 ? 3 : 4;
         const deploymentTypes = Array.from(this.regionDeploymentTypes).sort().join(',');
 
         // Include time parameters in request key
