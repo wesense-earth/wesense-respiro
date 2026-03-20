@@ -8048,16 +8048,11 @@ class Respiro {
 
             console.log(`Loaded ${Object.keys(this.regionalData).length} regions for ${this.regionMetric} (ADM${data.admin_level})`);
 
-            // Force layer redraw using rerenderTiles()
-            // protomaps-leaflet caches rendered Canvas tiles, so we need to force a re-render
+            // Force layer redraw — remove and re-add to ensure tiles re-render
+            // with fresh data. rerenderTiles() doesn't reliably redraw with ZXY source.
             if (this.regionLayer) {
-                if (this.regionLayer.rerenderTiles) {
-                    this.regionLayer.rerenderTiles();
-                } else {
-                    // Fallback: remove and re-add layer to force re-render
-                    this.map.removeLayer(this.regionLayer);
-                    this.regionLayer.addTo(this.map);
-                }
+                this.map.removeLayer(this.regionLayer);
+                this.regionLayer.addTo(this.map);
             }
 
             // Update legend
