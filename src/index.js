@@ -649,13 +649,41 @@ app.use(express.json());
 const pmtilesFilePath = path.join(__dirname, '../public/regions.pmtiles');
 let pmtilesReader = null;
 
+// Node.js file source for pmtiles (the built-in FileSource is Deno-only)
+class NodeFileSource {
+    constructor(filePath) {
+        this.filePath = filePath;
+        this.fd = null;
+    }
+
+    async getBytes(offset, length) {
+        if (this.fd === null) {
+            this.fd = fs.openSync(this.filePath, 'r');
+        }
+        const buffer = Buffer.alloc(length);
+        fs.readSync(this.fd, buffer, 0, length, offset);
+        return { data: buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) };
+    }
+
+    getKey() {
+        return this.filePath;
+    }
+
+    close() {
+        if (this.fd !== null) {
+            fs.closeSync(this.fd);
+            this.fd = null;
+        }
+    }
+}
+
 function getPMTilesReader() {
     if (pmtilesReader && fs.existsSync(pmtilesFilePath)) {
         return pmtilesReader;
     }
     if (fs.existsSync(pmtilesFilePath)) {
-        const { PMTiles, FileSource } = require('pmtiles');
-        pmtilesReader = new PMTiles(new FileSource(pmtilesFilePath));
+        const { PMTiles } = require('pmtiles');
+        pmtilesReader = new PMTiles(new NodeFileSource(pmtilesFilePath));
         console.log('PMTiles reader opened:', pmtilesFilePath);
     }
     return pmtilesReader;
@@ -696,7 +724,6 @@ app.get('/api/tiles/:z/:x/:y.mvt', async (req, res) => {
 
         res.set('Content-Type', 'application/vnd.mapbox-vector-tile');
         res.set('Cache-Control', 'public, max-age=3600');
-        res.set('Content-Encoding', 'gzip');  // PMTiles stores tiles gzip-compressed
         res.send(Buffer.from(tile.data));
     } catch (err) {
         console.error(`Tile error ${z}/${x}/${y}:`, err.message);
