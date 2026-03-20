@@ -642,45 +642,65 @@ app.use(compression({
 }));
 app.use(express.json());
 
-// Serve PMTiles via dedicated route with explicit range request handling.
-// express.static's range support gets corrupted by reverse proxies (nginx/SWAG/Caddy)
-// which buffer, re-compress, or modify range responses — breaking protobuf tile data.
+// Serve vector tiles from PMTiles archive as individual tile responses.
+// Reverse proxies (nginx/SWAG/Caddy) corrupt PMTiles HTTP range requests by
+// buffering/recompressing partial responses. Serving individual tiles via a
+// standard API endpoint avoids range requests entirely.
 const pmtilesFilePath = path.join(__dirname, '../public/regions.pmtiles');
-app.get('/regions.pmtiles', (req, res) => {
-    if (!fs.existsSync(pmtilesFilePath)) {
-        return res.status(404).send('PMTiles file not found');
+let pmtilesReader = null;
+
+function getPMTilesReader() {
+    if (pmtilesReader && fs.existsSync(pmtilesFilePath)) {
+        return pmtilesReader;
+    }
+    if (fs.existsSync(pmtilesFilePath)) {
+        const { PMTiles, FileSource } = require('pmtiles');
+        pmtilesReader = new PMTiles(new FileSource(pmtilesFilePath));
+        console.log('PMTiles reader opened:', pmtilesFilePath);
+    }
+    return pmtilesReader;
+}
+
+// Invalidate reader when file changes (e.g., boundary regeneration)
+let pmtilesWatcher = null;
+function watchPMTiles() {
+    if (pmtilesWatcher) return;
+    try {
+        pmtilesWatcher = fs.watch(path.dirname(pmtilesFilePath), (event, filename) => {
+            if (filename === 'regions.pmtiles') {
+                console.log('PMTiles file changed, invalidating reader');
+                pmtilesReader = null;
+            }
+        });
+    } catch (e) {
+        // Ignore watch errors
+    }
+}
+watchPMTiles();
+
+app.get('/api/tiles/:z/:x/:y.mvt', async (req, res) => {
+    const reader = getPMTilesReader();
+    if (!reader) {
+        return res.status(404).send('PMTiles file not available');
     }
 
-    const stat = fs.statSync(pmtilesFilePath);
-    const fileSize = stat.size;
+    const z = parseInt(req.params.z);
+    const x = parseInt(req.params.x);
+    const y = parseInt(req.params.y);
 
-    // Headers to prevent proxy interference
-    res.set('Access-Control-Allow-Origin', '*');
-    res.set('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges');
-    res.set('Accept-Ranges', 'bytes');
-    res.set('Cache-Control', 'public, max-age=3600');
-    res.set('Content-Type', 'application/octet-stream');
-    // Tell proxies not to transform/compress this response
-    res.set('Cache-Control', 'public, max-age=3600, no-transform');
-
-    const range = req.headers.range;
-    if (range) {
-        const parts = range.replace(/bytes=/, '').split('-');
-        const start = parseInt(parts[0], 10);
-        const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-
-        if (start >= fileSize || end >= fileSize || start > end) {
-            res.status(416).set('Content-Range', `bytes */${fileSize}`).end();
-            return;
+    try {
+        const tile = await reader.getZxy(z, x, y);
+        if (!tile || !tile.data) {
+            return res.status(204).end();  // No tile at this coordinate
         }
 
-        res.status(206);
-        res.set('Content-Range', `bytes ${start}-${end}/${fileSize}`);
-        res.set('Content-Length', end - start + 1);
-        fs.createReadStream(pmtilesFilePath, { start, end }).pipe(res);
-    } else {
-        res.set('Content-Length', fileSize);
-        fs.createReadStream(pmtilesFilePath).pipe(res);
+        res.set('Content-Type', 'application/vnd.mapbox-vector-tile');
+        res.set('Cache-Control', 'public, max-age=3600');
+        res.set('Content-Encoding', 'gzip');  // PMTiles stores tiles gzip-compressed
+        res.send(Buffer.from(tile.data));
+    } catch (err) {
+        console.error(`Tile error ${z}/${x}/${y}:`, err.message);
+        res.status(500).end();
     }
 });
 
