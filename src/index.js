@@ -642,21 +642,53 @@ app.use(compression({
 }));
 app.use(express.json());
 
-// Serve static files with appropriate caching (per architecture Section 8.2)
-// PMTiles uses HTTP range requests, so browser caches tile chunks efficiently
+// Serve PMTiles via dedicated route with explicit range request handling.
+// express.static's range support gets corrupted by reverse proxies (nginx/SWAG/Caddy)
+// which buffer, re-compress, or modify range responses — breaking protobuf tile data.
+const pmtilesFilePath = path.join(__dirname, '../public/regions.pmtiles');
+app.get('/regions.pmtiles', (req, res) => {
+    if (!fs.existsSync(pmtilesFilePath)) {
+        return res.status(404).send('PMTiles file not found');
+    }
+
+    const stat = fs.statSync(pmtilesFilePath);
+    const fileSize = stat.size;
+
+    // Headers to prevent proxy interference
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges');
+    res.set('Accept-Ranges', 'bytes');
+    res.set('Cache-Control', 'public, max-age=3600');
+    res.set('Content-Type', 'application/octet-stream');
+    // Tell proxies not to transform/compress this response
+    res.set('Cache-Control', 'public, max-age=3600, no-transform');
+
+    const range = req.headers.range;
+    if (range) {
+        const parts = range.replace(/bytes=/, '').split('-');
+        const start = parseInt(parts[0], 10);
+        const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+
+        if (start >= fileSize || end >= fileSize || start > end) {
+            res.status(416).set('Content-Range', `bytes */${fileSize}`).end();
+            return;
+        }
+
+        res.status(206);
+        res.set('Content-Range', `bytes ${start}-${end}/${fileSize}`);
+        res.set('Content-Length', end - start + 1);
+        fs.createReadStream(pmtilesFilePath, { start, end }).pipe(res);
+    } else {
+        res.set('Content-Length', fileSize);
+        fs.createReadStream(pmtilesFilePath).pipe(res);
+    }
+});
+
+// Serve static files with appropriate caching
 app.use(express.static(path.join(__dirname, '../public'), {
-    // Disable ETags for all static files — PMTiles range requests break when a
-    // reverse proxy (nginx/SWAG/Caddy) generates its own ETags that conflict
-    // with Express's ETags, causing protomaps-leaflet to abort tile loading.
-    // Cache-Control headers handle caching instead.
     etag: false,
     setHeaders: (res, filePath) => {
-        if (filePath.endsWith('.pmtiles')) {
-            // PMTiles: cache for 1 hour — file can be regenerated when boundaries update
-            res.set('Accept-Ranges', 'bytes');
-            res.set('Access-Control-Allow-Origin', '*');
-            res.set('Cache-Control', 'public, max-age=3600');
-        } else if (filePath.endsWith('.html')) {
+        if (filePath.endsWith('.html')) {
             // HTML: no cache (may change frequently)
             res.set('Cache-Control', 'no-cache');
         } else if (filePath.endsWith('.js') || filePath.endsWith('.css')) {
