@@ -9690,16 +9690,13 @@ class Respiro {
                         button.innerHTML = gridIcon;
                     }
 
-                    // Restore map position (layer changes can sometimes shift the view)
-                    // Use invalidateSize first to ensure the container dimensions are current,
-                    // then defer setView to run after Leaflet finishes processing layer changes
-                    self.map.invalidateSize({ pan: false });
-                    self.map.setView(currentCenter, currentZoom, { animate: false });
-                    // Deferred restore as a safety net — Leaflet may process layer
-                    // add/remove events asynchronously which can shift the view
-                    setTimeout(() => {
-                        self.map.setView(currentCenter, currentZoom, { animate: false });
-                    }, 50);
+                    // Restore map position — layer add/remove can shift the view.
+                    // Multiple deferred restores because MarkerCluster and protomaps-leaflet
+                    // process layer changes asynchronously at different timings.
+                    const restore = () => self.map.setView(currentCenter, currentZoom, { animate: false });
+                    restore();
+                    setTimeout(restore, 50);
+                    setTimeout(restore, 200);
 
                     button.classList.remove('loading');
                 });
