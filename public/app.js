@@ -11060,20 +11060,21 @@ class Respiro {
         const peersEl = document.getElementById('statsPeers');
         const peersSubEl = document.getElementById('statsPeersSub');
 
+        // OrbitDB peer count (sync/discovery) — use peer_count (all libp2p connections)
+        // since on the private WeSense network, all connected peers are WeSense peers
+        let syncCount = '--';
+        if (orbitdb && orbitdb.peer_count != null) {
+            syncCount = String(orbitdb.peer_count);
+        } else if (orbitdb && orbitdb.status === 'not_configured') {
+            syncCount = '--';
+        }
+
         // Zenoh Bridge remote peer count (live data)
         let liveCount = '--';
         if (zenohBridge && zenohBridge.remote_peers != null) {
             liveCount = String(zenohBridge.remote_peers);
         } else if (zenohBridge && zenohBridge.status === 'not_configured') {
             liveCount = '--';
-        }
-
-        // OrbitDB peer count (sync/discovery)
-        let syncCount = '--';
-        if (orbitdb && orbitdb.peer_count != null) {
-            syncCount = String(orbitdb.wesense_peer_count ?? 0);
-        } else if (orbitdb && orbitdb.status === 'not_configured') {
-            syncCount = '--';
         }
 
         // Iroh (archive replication)
@@ -11084,7 +11085,7 @@ class Respiro {
             archiveCount = '--';
         }
 
-        peersEl.textContent = `${liveCount} / ${syncCount} / ${archiveCount}`;
+        peersEl.textContent = `${syncCount} / ${liveCount} / ${archiveCount}`;
 
         // Hero: Devices Online
         const devicesEl = document.getElementById('statsDevices');
@@ -11132,20 +11133,20 @@ class Respiro {
         // Health indicators
         this.setHealthIndicator('healthClickhouse', overview.clickhouse_connected ? 'healthy' : 'offline');
 
-        if (zenoh && zenoh.status === 'not_configured') {
-            this.setHealthIndicator('healthZenoh', 'unknown');
-        } else if (zenoh && zenoh.status) {
-            this.setHealthIndicator('healthZenoh', zenoh.status === 'healthy' || zenoh.zenoh_connected ? 'healthy' : 'degraded');
-        } else {
-            this.setHealthIndicator('healthZenoh', 'offline');
-        }
-
         if (orbitdb && orbitdb.status === 'not_configured') {
             this.setHealthIndicator('healthOrbitdb', 'unknown');
         } else if (orbitdb && orbitdb.peer_count != null) {
             this.setHealthIndicator('healthOrbitdb', 'healthy');
         } else {
             this.setHealthIndicator('healthOrbitdb', 'offline');
+        }
+
+        if (zenoh && zenoh.status === 'not_configured') {
+            this.setHealthIndicator('healthZenoh', 'unknown');
+        } else if (zenoh && zenoh.status) {
+            this.setHealthIndicator('healthZenoh', zenoh.status === 'healthy' || zenoh.zenoh_connected ? 'healthy' : 'degraded');
+        } else {
+            this.setHealthIndicator('healthZenoh', 'offline');
         }
 
         // MQTT — infer from whether we have real-time data

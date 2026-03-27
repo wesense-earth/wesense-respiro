@@ -1815,21 +1815,21 @@ app.get('/api/stats/network', async (req, res) => {
         } catch {}
     }
 
-    // Iroh Sidecar
-    const irohUrl = process.env.IROH_SIDECAR_URL || '';
-    if (irohUrl) {
-        try {
-            const u = new URL(irohUrl);
-            checks.push({ name: 'Iroh Sidecar', host: u.hostname, port: parseInt(u.port || '4400', 10), internal: true });
-        } catch {}
-    }
-
     // Zenoh Bridge
     const zbUrl = process.env.ZENOH_BRIDGE_URL || '';
     if (zbUrl) {
         try {
             const u = new URL(zbUrl);
             checks.push({ name: 'Zenoh Bridge', host: u.hostname, port: parseInt(u.port || '5300', 10), internal: true });
+        } catch {}
+    }
+
+    // Iroh Sidecar
+    const irohUrl = process.env.IROH_SIDECAR_URL || '';
+    if (irohUrl) {
+        try {
+            const u = new URL(irohUrl);
+            checks.push({ name: 'Iroh Sidecar', host: u.hostname, port: parseInt(u.port || '4400', 10), internal: true });
         } catch {}
     }
 
