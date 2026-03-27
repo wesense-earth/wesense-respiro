@@ -1214,7 +1214,17 @@ class ClickHouseClient {
             const result = await this.client.query({ query, format: 'JSONEachRow' });
             const rows = await result.json();
 
-            const contribution = { local: {}, p2p: {} };
+            const knownSources = [
+                'MESHTASTIC', 'MESHTASTIC_PUBLIC', 'MESHTASTIC_COMMUNITY',
+                'MESHTASTIC_DOWNLINK', 'WESENSE', 'TTN', 'CHIRPSTACK',
+                'HOMEASSISTANT', 'GOVT_AQ'
+            ];
+            const emptySource = { devices: 0, readings: 0 };
+
+            const contribution = {
+                local: Object.fromEntries(knownSources.map(s => [s, { ...emptySource }])),
+                p2p: Object.fromEntries(knownSources.map(s => [s, { ...emptySource }]))
+            };
             for (const row of rows) {
                 const via = row.received_via === 'p2p' ? 'p2p' : 'local';
                 contribution[via][row.data_source] = {
