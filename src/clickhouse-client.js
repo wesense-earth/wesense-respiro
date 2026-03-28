@@ -1215,9 +1215,14 @@ class ClickHouseClient {
             const rows = await result.json();
 
             const knownSources = [
+                // New standardised lowercase keys
+                'wesense', 'meshtastic', 'home_assistant',
+                'ecan', 'tasman', 'nelson', 'marlborough', 'hawkes_bay',
+                'gisborne', 'horizons', 'westcoast',
+                // Legacy uppercase keys (kept during migration)
                 'MESHTASTIC', 'MESHTASTIC_PUBLIC', 'MESHTASTIC_COMMUNITY',
                 'MESHTASTIC_DOWNLINK', 'WESENSE', 'TTN', 'CHIRPSTACK',
-                'HOMEASSISTANT', 'GOVT_AQ', 'GOVT_AQ_NZ'
+                'HOMEASSISTANT', 'HA_PLUGIN', 'GOVT_AQ', 'GOVT_AQ_NZ',
             ];
             const emptySource = { devices: 0, readings: 0 };
 

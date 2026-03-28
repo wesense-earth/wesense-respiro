@@ -1,14 +1,29 @@
 // Data-source-aware freshness thresholds
 // WESENSE sensors report every 5 minutes, Meshtastic sensors report every 30-60 minutes
 const FRESHNESS_THRESHOLDS = {
-    'WESENSE': 10 * 60 * 1000,              // 10 minutes
-    'CHIRPSTACK': 10 * 60 * 1000,           // 10 minutes (self-hosted LoRaWAN via ChirpStack)
-    'TTN': 10 * 60 * 1000,                  // 10 minutes (same hardware as WiFi, via LoRaWAN)
-    'MESHTASTIC_PUBLIC': 61 * 60 * 1000,    // 61 minutes (catches 60-min reporters)
-    'MESHTASTIC_COMMUNITY': 61 * 60 * 1000, // 61 minutes
-    'MESHTASTIC_DOWNLINK': 61 * 60 * 1000,  // 61 minutes
-    'GOVT_AQ': 15 * 60 * 1000,              // 15 minutes (10-min reporting interval)
-    'GOVT_AQ_NZ': 15 * 60 * 1000,           // 15 minutes (10-min reporting interval)
+    // New standardised lowercase keys
+    'wesense': 10 * 60 * 1000,              // 10 minutes
+    'meshtastic': 61 * 60 * 1000,           // 61 minutes (catches 60-min reporters)
+    'home_assistant': 10 * 60 * 1000,       // 10 minutes
+    'ecan': 15 * 60 * 1000,                 // 15 minutes (10-min reporting interval)
+    'tasman': 15 * 60 * 1000,
+    'nelson': 15 * 60 * 1000,
+    'marlborough': 15 * 60 * 1000,
+    'hawkes_bay': 15 * 60 * 1000,
+    'gisborne': 15 * 60 * 1000,
+    'horizons': 15 * 60 * 1000,
+    'westcoast': 15 * 60 * 1000,
+    // Legacy uppercase keys (kept during migration)
+    'WESENSE': 10 * 60 * 1000,
+    'CHIRPSTACK': 10 * 60 * 1000,
+    'TTN': 10 * 60 * 1000,
+    'MESHTASTIC_PUBLIC': 61 * 60 * 1000,
+    'MESHTASTIC_COMMUNITY': 61 * 60 * 1000,
+    'MESHTASTIC_DOWNLINK': 61 * 60 * 1000,
+    'GOVT_AQ': 15 * 60 * 1000,
+    'GOVT_AQ_NZ': 15 * 60 * 1000,
+    'HOMEASSISTANT': 10 * 60 * 1000,
+    'HA_PLUGIN': 10 * 60 * 1000,
     'default': 10 * 60 * 1000               // Conservative default
 };
 
@@ -10830,33 +10845,39 @@ class Respiro {
         return { type: null, board: null };
     }
 
-    formatDataSource(source) {
-        // Convert data_source keys to friendly display names.
-        // Known sources get branded names; unknown sources get auto-formatted
-        // (e.g. "GOVT_AQ" -> "Govt Aq") so new sources appear without code changes.
+    formatDataSource(source, dataSourceName) {
+        // Prefer data_source_name from ClickHouse if available
+        if (dataSourceName) return dataSourceName;
+        // Fallback map for legacy and new data_source keys
         if (!source) return null;
         const map = {
+            // New standardised lowercase keys
+            'wesense': 'WeSense',
+            'meshtastic': 'Meshtastic',
+            'home_assistant': 'Home Assistant',
+            'ecan': 'Environment Canterbury',
+            'tasman': 'Tasman District Council',
+            'nelson': 'Nelson City Council',
+            'marlborough': 'Marlborough District Council',
+            'hawkes_bay': "Hawke's Bay Regional Council",
+            'gisborne': 'Gisborne District Council',
+            'horizons': 'Horizons Regional Council',
+            'westcoast': 'West Coast Regional Council',
+            // Legacy uppercase keys (kept during migration)
             'MESHTASTIC': 'Meshtastic',
-            'MESHTASTIC_PUBLIC': 'Meshtastic Public',
-            'MESHTASTIC_COMMUNITY': 'Meshtastic Community',
-            'MESHTASTIC_DOWNLINK': 'Meshtastic Downlink',
+            'MESHTASTIC_PUBLIC': 'Meshtastic',
+            'MESHTASTIC_COMMUNITY': 'Meshtastic',
+            'MESHTASTIC_DOWNLINK': 'Meshtastic',
             'WESENSE': 'WeSense',
-            'TTN': 'WeSense TTN',
-            'CHIRPSTACK': 'WeSense ChirpStack',
+            'TTN': 'WeSense',
+            'CHIRPSTACK': 'WeSense',
             'HOMEASSISTANT': 'Home Assistant',
-            'GOVT_AQ': 'Government AQ',
+            'HA_PLUGIN': 'Home Assistant',
+            'GOVT_AQ': 'NZ Govt Stations',
             'GOVT_AQ_NZ': 'NZ Govt Stations',
-            'meshtastic-public': 'Meshtastic Public',
-            'meshtastic-community': 'Meshtastic Community',
-            'meshtastic-downlink': 'Meshtastic Downlink',
-            'ttn': 'WeSense TTN',
-            'chirpstack': 'WeSense ChirpStack',
-            'homeassistant': 'Home Assistant',
-            'govt-aq': 'Government AQ',
-            'govt-aq-nz': 'NZ Govt Stations'
         };
         if (map[source]) return map[source];
-        // Auto-format unknown sources: "NEW_SOURCE_NAME" -> "New Source Name"
+        // Auto-format unknown sources: "new_source_name" -> "New Source Name"
         return source.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
     }
 
@@ -10912,13 +10933,27 @@ class Respiro {
         // unknown sources get 'default' (grey). New sources appear automatically
         // without needing CSS changes — add a named class later for branding.
         const map = {
+            // New standardised lowercase keys
+            'wesense': 'wesense',
+            'meshtastic': 'meshtastic-community',
+            'home_assistant': 'homeassistant',
+            'ecan': 'govt-aq-nz',
+            'tasman': 'govt-aq-nz',
+            'nelson': 'govt-aq-nz',
+            'marlborough': 'govt-aq-nz',
+            'hawkes_bay': 'govt-aq-nz',
+            'gisborne': 'govt-aq-nz',
+            'horizons': 'govt-aq-nz',
+            'westcoast': 'govt-aq-nz',
+            // Legacy uppercase keys (kept during migration)
             'WESENSE': 'wesense',
-            'CHIRPSTACK': 'chirpstack',
-            'MESHTASTIC_DOWNLINK': 'meshtastic-public',
+            'CHIRPSTACK': 'wesense',
+            'TTN': 'wesense',
+            'MESHTASTIC_DOWNLINK': 'meshtastic-community',
             'MESHTASTIC_COMMUNITY': 'meshtastic-community',
             'HOMEASSISTANT': 'homeassistant',
-            'TTN': 'ttn',
-            'GOVT_AQ': 'govt-aq',
+            'HA_PLUGIN': 'homeassistant',
+            'GOVT_AQ': 'govt-aq-nz',
             'GOVT_AQ_NZ': 'govt-aq-nz',
         };
         return map[source] || 'default';
