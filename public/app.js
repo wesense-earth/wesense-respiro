@@ -7,6 +7,8 @@ const FRESHNESS_THRESHOLDS = {
     'MESHTASTIC_PUBLIC': 61 * 60 * 1000,    // 61 minutes (catches 60-min reporters)
     'MESHTASTIC_COMMUNITY': 61 * 60 * 1000, // 61 minutes
     'MESHTASTIC_DOWNLINK': 61 * 60 * 1000,  // 61 minutes
+    'GOVT_AQ': 15 * 60 * 1000,              // 15 minutes (10-min reporting interval)
+    'GOVT_AQ_NZ': 15 * 60 * 1000,           // 15 minutes (10-min reporting interval)
     'default': 10 * 60 * 1000               // Conservative default
 };
 
@@ -10843,13 +10845,15 @@ class Respiro {
             'CHIRPSTACK': 'WeSense ChirpStack',
             'HOMEASSISTANT': 'Home Assistant',
             'GOVT_AQ': 'Government AQ',
+            'GOVT_AQ_NZ': 'NZ Govt Stations',
             'meshtastic-public': 'Meshtastic Public',
             'meshtastic-community': 'Meshtastic Community',
             'meshtastic-downlink': 'Meshtastic Downlink',
             'ttn': 'WeSense TTN',
             'chirpstack': 'WeSense ChirpStack',
             'homeassistant': 'Home Assistant',
-            'govt-aq': 'Government AQ'
+            'govt-aq': 'Government AQ',
+            'govt-aq-nz': 'NZ Govt Stations'
         };
         if (map[source]) return map[source];
         // Auto-format unknown sources: "NEW_SOURCE_NAME" -> "New Source Name"
@@ -10915,6 +10919,7 @@ class Respiro {
             'HOMEASSISTANT': 'homeassistant',
             'TTN': 'ttn',
             'GOVT_AQ': 'govt-aq',
+            'GOVT_AQ_NZ': 'govt-aq-nz',
         };
         return map[source] || 'default';
     }

@@ -1217,7 +1217,7 @@ class ClickHouseClient {
             const knownSources = [
                 'MESHTASTIC', 'MESHTASTIC_PUBLIC', 'MESHTASTIC_COMMUNITY',
                 'MESHTASTIC_DOWNLINK', 'WESENSE', 'TTN', 'CHIRPSTACK',
-                'HOMEASSISTANT', 'GOVT_AQ'
+                'HOMEASSISTANT', 'GOVT_AQ', 'GOVT_AQ_NZ'
             ];
             const emptySource = { devices: 0, readings: 0 };
 
