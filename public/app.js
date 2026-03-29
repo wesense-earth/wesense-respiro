@@ -11102,23 +11102,6 @@ class Respiro {
             coverageSubEl.textContent = 'countries / regions';
         }
 
-        // Data Sources — dynamically renders all sources from the backend
-        const sourcesEl = document.getElementById('statsDataSources');
-        if (overview.data_sources && Object.keys(overview.data_sources).length > 0) {
-            sourcesEl.innerHTML = Object.entries(overview.data_sources)
-                .map(([key, info]) => `
-                    <div class="stats-source-row">
-                        <span class="stats-source-name">
-                            <span class="source-dot ${this.getSourceDotClass(key)}"></span>
-                            ${info.name || this.formatDataSource(key) || key}
-                        </span>
-                        <span class="stats-source-count">${info.devices}</span>
-                    </div>
-                `).join('');
-        } else {
-            sourcesEl.innerHTML = '<div class="stats-empty">No data</div>';
-        }
-
         // Health indicators
         this.setHealthIndicator('healthClickhouse', overview.clickhouse_connected ? 'healthy' : 'offline');
 
@@ -11199,9 +11182,86 @@ class Respiro {
         `;
     }
 
+    formatReadingType(type) {
+        const labels = {
+            'temperature': 'Temperature',
+            'humidity': 'Humidity',
+            'pressure': 'Pressure',
+            'co2': 'CO\u2082',
+            'pm1_0': 'PM1.0',
+            'pm2_5': 'PM2.5',
+            'pm10': 'PM10',
+            'voc_index': 'VOC Index',
+            'nox_index': 'NOx Index'
+        };
+        return labels[type] || type.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    }
+
+    coverageBarColor(pct) {
+        if (pct >= 80) return 'var(--health-healthy, #4caf50)';
+        if (pct >= 40) return 'var(--health-degraded, #ff9800)';
+        return 'var(--health-offline, #f44336)';
+    }
+
     renderContribution(contribution, nodes) {
-        // Dynamically discover all sources from the contribution data
-        // rather than hardcoding a fixed list
+        const allTypes = contribution?.all_reading_types || [];
+        const byTypeLocal = contribution?.by_type?.local || {};
+        const byTypeP2P = contribution?.by_type?.p2p || {};
+
+        // Render per-reading-type coverage rows for My Contribution / P2P
+        const renderTypeRows = (typeData) => {
+            if (allTypes.length === 0 && Object.keys(typeData).length === 0) {
+                return '<div class="stats-empty">No data</div>';
+            }
+
+            // Build full list: all canonical/known types
+            const typesToShow = allTypes.length > 0 ? allTypes : Object.keys(typeData);
+
+            // Split into active (has data) and missing
+            const active = typesToShow.filter(t => typeData[t]);
+            const missing = typesToShow.filter(t => !typeData[t]);
+
+            // Sort active by reading count desc, missing alphabetically
+            active.sort((a, b) => (typeData[b]?.readings || 0) - (typeData[a]?.readings || 0));
+            missing.sort((a, b) => this.formatReadingType(a).localeCompare(this.formatReadingType(b)));
+
+            const rows = [];
+
+            for (const type of active) {
+                const d = typeData[type];
+                const pct = d.coverage_pct;
+                const color = this.coverageBarColor(pct);
+                rows.push(`
+                    <div class="stats-type-row">
+                        <div class="stats-type-header">
+                            <span class="stats-type-name">${this.formatReadingType(type)}</span>
+                            <span class="stats-type-meta">${pct}%  &middot;  ${this.formatLargeNumber(d.readings)} readings</span>
+                        </div>
+                        <div class="stats-coverage-bar">
+                            <div class="stats-coverage-fill" style="width:${pct}%;background:${color}"></div>
+                        </div>
+                    </div>
+                `);
+            }
+
+            for (const type of missing) {
+                rows.push(`
+                    <div class="stats-type-row stats-type-missing">
+                        <div class="stats-type-header">
+                            <span class="stats-type-name">${this.formatReadingType(type)}</span>
+                            <span class="stats-type-meta">no data yet</span>
+                        </div>
+                        <div class="stats-coverage-bar">
+                            <div class="stats-coverage-fill" style="width:0%"></div>
+                        </div>
+                    </div>
+                `);
+            }
+
+            return rows.join('');
+        };
+
+        // Render per-source rows for Data Sources card
         const renderSourceRows = (sources) => {
             if (!sources || Object.keys(sources).length === 0) {
                 return '<div class="stats-empty">No data</div>';
@@ -11209,7 +11269,8 @@ class Respiro {
             return Object.entries(sources)
                 .sort(([a, ad], [b, bd]) => ((ad?.name || a)).localeCompare(bd?.name || b))
                 .map(([key, data]) => {
-                    const count = data ? data.devices : 0;
+                    const devices = data ? data.devices : 0;
+                    const readings = data ? data.readings : 0;
                     const displayName = data?.name || this.formatDataSource(key) || key;
                     return `
                         <div class="stats-source-row">
@@ -11217,27 +11278,41 @@ class Respiro {
                                 <span class="source-dot ${this.getSourceDotClass(key)}"></span>
                                 ${displayName}
                             </span>
-                            <span class="stats-source-count${count === 0 ? ' style="color:var(--text-muted)"' : ''}">${count} <span style="color:var(--text-muted);font-weight:400;font-size:12px">devices</span></span>
+                            <span class="stats-source-count">${devices} <span style="color:var(--text-muted);font-weight:400;font-size:12px">devices</span> &middot; ${this.formatLargeNumber(readings)} <span style="color:var(--text-muted);font-weight:400;font-size:12px">readings</span></span>
                         </div>
                     `;
                 }).join('');
         };
 
-        // My Contribution
+        // My Contribution — per reading type with coverage bars
         const myEl = document.getElementById('statsMyContribution');
-        myEl.innerHTML = renderSourceRows(contribution?.local || {});
+        myEl.innerHTML = renderTypeRows(byTypeLocal);
 
-        // P2P Network
+        // P2P Network — same format
         const p2pEl = document.getElementById('statsP2PContribution');
-        const p2pSources = contribution?.p2p || {};
-        const nodeCount = nodes?.nodes?.length || 0;
-        const hasP2PData = Object.keys(p2pSources).length > 0;
-
+        const hasP2PData = Object.keys(byTypeP2P).length > 0;
         if (hasP2PData) {
-            p2pEl.innerHTML = renderSourceRows(p2pSources);
+            p2pEl.innerHTML = renderTypeRows(byTypeP2P);
         } else {
             p2pEl.innerHTML = '<div class="stats-empty">No P2P data yet</div>';
         }
+
+        // Data Sources — per source with device + reading counts
+        const sourcesEl = document.getElementById('statsDataSources');
+        const allSources = {};
+        // Merge local and p2p sources
+        for (const [key, data] of Object.entries(contribution?.by_source?.local || {})) {
+            allSources[key] = { ...data };
+        }
+        for (const [key, data] of Object.entries(contribution?.by_source?.p2p || {})) {
+            if (allSources[key]) {
+                allSources[key].devices += data.devices;
+                allSources[key].readings += data.readings;
+            } else {
+                allSources[key] = { ...data };
+            }
+        }
+        sourcesEl.innerHTML = renderSourceRows(allSources);
     }
 
     renderContainerStats(data) {

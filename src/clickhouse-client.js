@@ -1237,6 +1237,80 @@ class ClickHouseClient {
         }
     }
 
+    /**
+     * Query contribution breakdown by reading type for My Contribution / P2P cards
+     * Returns per-reading-type device count, reading count, and time coverage percentage
+     */
+    async queryContributionByType(range = '1h') {
+        if (!this.connected || !this.client) {
+            return null;
+        }
+
+        try {
+            const interval = this._statsRangeToInterval(range);
+
+            // Slot size and total slots vary by range for coverage calculation
+            const slotConfig = {
+                '1h':  { slot: 'INTERVAL 5 MINUTE',  totalSlots: 12 },
+                '24h': { slot: 'INTERVAL 15 MINUTE', totalSlots: 96 },
+                '7d':  { slot: 'INTERVAL 1 HOUR',    totalSlots: 168 }
+            };
+            const { slot, totalSlots } = slotConfig[range] || slotConfig['1h'];
+
+            // Query A: per-reading-type coverage for local and p2p
+            const typeQuery = `
+                SELECT
+                    received_via,
+                    reading_type,
+                    uniqExact(device_id) as device_count,
+                    count() as reading_count,
+                    uniqExact(toStartOfInterval(timestamp, ${slot})) as active_slots
+                FROM sensor_readings
+                WHERE timestamp > now() - ${interval}
+                GROUP BY received_via, reading_type
+                ORDER BY received_via, reading_count DESC
+            `;
+
+            // Query B: all-time known reading types (for showing missing types)
+            const allTypesQuery = `
+                SELECT DISTINCT reading_type FROM sensor_readings
+            `;
+
+            const [typeResult, allTypesResult] = await Promise.all([
+                this.client.query({ query: typeQuery, format: 'JSONEachRow' }),
+                this.client.query({ query: allTypesQuery, format: 'JSONEachRow' })
+            ]);
+
+            const typeRows = await typeResult.json();
+            const allTypesRows = await allTypesResult.json();
+
+            // Canonical reading types — union with all-time DB types
+            const canonicalTypes = ['temperature', 'humidity', 'pressure', 'co2', 'pm1_0', 'pm2_5', 'pm10', 'voc_index', 'nox_index'];
+            const dbTypes = allTypesRows.map(r => r.reading_type).filter(Boolean);
+            const allReadingTypes = [...new Set([...canonicalTypes, ...dbTypes])];
+
+            const byType = { local: {}, p2p: {} };
+            for (const row of typeRows) {
+                const via = row.received_via === 'p2p' ? 'p2p' : 'local';
+                const coveragePct = Math.min(100, Math.round((parseInt(row.active_slots) / totalSlots) * 100));
+                byType[via][row.reading_type] = {
+                    devices: parseInt(row.device_count),
+                    readings: parseInt(row.reading_count),
+                    coverage_pct: coveragePct
+                };
+            }
+
+            return {
+                by_type: byType,
+                all_reading_types: allReadingTypes
+            };
+
+        } catch (error) {
+            console.error('Failed to query contribution by type:', error.message);
+            return null;
+        }
+    }
+
     isConnected() {
         return this.connected;
     }

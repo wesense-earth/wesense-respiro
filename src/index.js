@@ -1762,8 +1762,18 @@ app.get('/api/stats/contribution', async (req, res) => {
     try {
         const allowed = ['1h', '24h', '7d'];
         const range = allowed.includes(req.query.range) ? req.query.range : '1h';
-        const contribution = await clickHouseClient.queryContribution(range);
-        res.json(contribution || { local: {}, p2p: {} });
+        const [bySource, byType] = await Promise.all([
+            clickHouseClient.queryContribution(range),
+            clickHouseClient.queryContributionByType(range)
+        ]);
+        res.json({
+            by_source: bySource || { local: {}, p2p: {} },
+            by_type: byType?.by_type || { local: {}, p2p: {} },
+            all_reading_types: byType?.all_reading_types || [],
+            // Backwards compat: keep local/p2p at top level for any other consumers
+            local: bySource?.local || {},
+            p2p: bySource?.p2p || {}
+        });
     } catch (error) {
         console.error('Error fetching contribution data:', error);
         res.status(500).json({ error: 'Failed to fetch contribution data' });

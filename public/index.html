@@ -2109,6 +2109,58 @@
             font-size: 14px;
         }
 
+        /* Reading type coverage rows (My Contribution) */
+        .stats-type-row {
+            padding: 8px 0;
+        }
+
+        .stats-type-row + .stats-type-row {
+            border-top: 1px solid rgba(128,128,128,0.1);
+        }
+
+        .stats-type-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 4px;
+        }
+
+        .stats-type-name {
+            color: var(--text-secondary);
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .stats-type-meta {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            color: var(--accent-color);
+        }
+
+        .stats-type-missing .stats-type-name {
+            color: var(--text-muted);
+        }
+
+        .stats-type-missing .stats-type-meta {
+            color: var(--text-muted);
+            font-style: italic;
+            font-family: inherit;
+        }
+
+        .stats-coverage-bar {
+            width: 100%;
+            height: 4px;
+            background: rgba(128,128,128,0.15);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .stats-coverage-fill {
+            height: 100%;
+            border-radius: 2px;
+            transition: width 0.4s ease;
+        }
+
         /* Health indicator dots */
         .stats-health-row {
             display: flex;
