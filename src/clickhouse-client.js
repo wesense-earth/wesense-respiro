@@ -948,7 +948,7 @@ class ClickHouseClient {
     }
 
     _statsRangeToInterval(range) {
-        const map = { '1h': 'INTERVAL 1 HOUR', '24h': 'INTERVAL 24 HOUR', '7d': 'INTERVAL 7 DAY' };
+        const map = { '1h': 'INTERVAL 1 HOUR', '24h': 'INTERVAL 24 HOUR', '7d': 'INTERVAL 7 DAY', 'all': 'INTERVAL 100 YEAR' };
         return map[range] || map['1h'];
     }
 
@@ -1120,9 +1120,22 @@ class ClickHouseClient {
 
         try {
             const interval = this._statsRangeToInterval(range);
-            const intervalMinutes = this._statsRangeToMinutes(range);
+            const isAll = range === 'all';
+            const intervalMinutes = isAll ? null : this._statsRangeToMinutes(range);
 
-            const query = `
+            const query = isAll ? `
+                SELECT
+                    uniqExact(device_id) as total_devices,
+                    uniqExact(device_id) as active_devices,
+                    count() as readings_in_range,
+                    round(count() / (dateDiff('minute', min(timestamp), now()) + 1.0), 1) as readings_per_minute,
+                    uniqExactIf(geo_country, geo_country != '') as countries,
+                    uniqExactIf(concat(geo_country, '-', geo_subdivision), geo_country != '' AND geo_subdivision != '') as regions,
+                    uniqExact(reading_type) as reading_types_active,
+                    max(timestamp) as latest_reading,
+                    count() as total_readings_all_time
+                FROM sensor_readings
+            ` : `
                 SELECT
                     uniqExact(device_id) as total_devices,
                     uniqExactIf(device_id, timestamp > now() - ${interval}) as active_devices,
@@ -1142,8 +1155,8 @@ class ClickHouseClient {
                     argMax(data_source_name, timestamp) as data_source_name,
                     uniqExact(device_id) as device_count
                 FROM sensor_readings
-                WHERE timestamp > now() - ${interval}
-                  AND data_source != ''
+                ${isAll ? '' : `WHERE timestamp > now() - ${interval}`}
+                ${isAll ? 'WHERE' : 'AND'} data_source != ''
                 GROUP BY data_source
                 ORDER BY device_count DESC
             `;
@@ -1200,6 +1213,7 @@ class ClickHouseClient {
 
         try {
             const interval = this._statsRangeToInterval(range);
+            const isAll = range === 'all';
             const query = `
                 SELECT
                     received_via,
@@ -1208,7 +1222,7 @@ class ClickHouseClient {
                     uniqExact(device_id) as device_count,
                     count() as reading_count
                 FROM sensor_readings
-                WHERE timestamp > now() - ${interval}
+                ${isAll ? '' : `WHERE timestamp > now() - ${interval}`}
                 GROUP BY received_via, data_source
                 ORDER BY received_via, device_count DESC
             `;
@@ -1248,14 +1262,26 @@ class ClickHouseClient {
 
         try {
             const interval = this._statsRangeToInterval(range);
+            const isAll = range === 'all';
 
             // Slot size and total slots vary by range for coverage calculation
+            // For 'all': use 1-day slots, compute total from earliest reading
             const slotConfig = {
                 '1h':  { slot: 'INTERVAL 5 MINUTE',  totalSlots: 12 },
                 '24h': { slot: 'INTERVAL 15 MINUTE', totalSlots: 96 },
-                '7d':  { slot: 'INTERVAL 1 HOUR',    totalSlots: 168 }
+                '7d':  { slot: 'INTERVAL 1 HOUR',    totalSlots: 168 },
+                'all': { slot: 'INTERVAL 1 DAY',     totalSlots: null }
             };
-            const { slot, totalSlots } = slotConfig[range] || slotConfig['1h'];
+            const { slot } = slotConfig[range] || slotConfig['1h'];
+            let { totalSlots } = slotConfig[range] || slotConfig['1h'];
+
+            // For 'all', we need to compute totalSlots from the data
+            if (isAll) {
+                const spanQuery = `SELECT dateDiff('day', min(timestamp), now()) + 1 as total_days FROM sensor_readings`;
+                const spanResult = await this.client.query({ query: spanQuery, format: 'JSONEachRow' });
+                const spanRows = await spanResult.json();
+                totalSlots = spanRows.length > 0 ? parseInt(spanRows[0].total_days) || 1 : 1;
+            }
 
             // Query A: per-reading-type coverage for local and p2p
             const typeQuery = `
@@ -1266,7 +1292,7 @@ class ClickHouseClient {
                     count() as reading_count,
                     uniqExact(toStartOfInterval(timestamp, ${slot})) as active_slots
                 FROM sensor_readings
-                WHERE timestamp > now() - ${interval}
+                ${isAll ? '' : `WHERE timestamp > now() - ${interval}`}
                 GROUP BY received_via, reading_type
                 ORDER BY received_via, reading_count DESC
             `;

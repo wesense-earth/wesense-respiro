@@ -1588,7 +1588,7 @@ app.get('/api/comparison', async (req, res) => {
 // Aggregated network overview (ClickHouse stats + in-memory state)
 app.get('/api/stats/overview', async (req, res) => {
     try {
-        const allowed = ['1h', '24h', '7d'];
+        const allowed = ['1h', '24h', '7d', 'all'];
         const range = allowed.includes(req.query.range) ? req.query.range : '1h';
         const stats = await clickHouseClient.queryNetworkStats(range);
         res.json({
@@ -1760,7 +1760,7 @@ if (ZENOH_BRIDGE_URL) {
 // Contribution breakdown (local vs P2P, by data source)
 app.get('/api/stats/contribution', async (req, res) => {
     try {
-        const allowed = ['1h', '24h', '7d'];
+        const allowed = ['1h', '24h', '7d', 'all'];
         const range = allowed.includes(req.query.range) ? req.query.range : '1h';
         const [bySource, byType] = await Promise.all([
             clickHouseClient.queryContribution(range),

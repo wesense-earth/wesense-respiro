@@ -11079,7 +11079,7 @@ class Respiro {
         // Hero: Devices Online
         const devicesEl = document.getElementById('statsDevices');
         const devicesSubEl = document.getElementById('statsDevicesSub');
-        const rangeLabels = { '1h': 'last 1 hour', '24h': 'last 24 hours', '7d': 'last 7 days' };
+        const rangeLabels = { '1h': 'last 1 hour', '24h': 'last 24 hours', '7d': 'last 7 days', 'all': 'all time' };
         const rangeLabel = rangeLabels[overview.range] || rangeLabels['1h'];
         if (overview.active_devices != null) {
             devicesEl.textContent = this.formatLargeNumber(overview.active_devices);
