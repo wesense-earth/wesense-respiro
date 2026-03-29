@@ -1139,6 +1139,7 @@ class ClickHouseClient {
             const sourceQuery = `
                 SELECT
                     data_source,
+                    argMax(data_source_name, timestamp) as data_source_name,
                     uniqExact(device_id) as device_count
                 FROM sensor_readings
                 WHERE timestamp > now() - ${interval}
@@ -1160,7 +1161,10 @@ class ClickHouseClient {
             const row = statsRows[0];
             const dataSources = {};
             for (const src of sourceRows) {
-                dataSources[src.data_source] = parseInt(src.device_count);
+                dataSources[src.data_source] = {
+                    devices: parseInt(src.device_count),
+                    name: src.data_source_name || src.data_source,
+                };
             }
 
             return {

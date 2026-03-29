@@ -11106,13 +11106,13 @@ class Respiro {
         const sourcesEl = document.getElementById('statsDataSources');
         if (overview.data_sources && Object.keys(overview.data_sources).length > 0) {
             sourcesEl.innerHTML = Object.entries(overview.data_sources)
-                .map(([key, count]) => `
+                .map(([key, info]) => `
                     <div class="stats-source-row">
                         <span class="stats-source-name">
                             <span class="source-dot ${this.getSourceDotClass(key)}"></span>
-                            ${this.formatDataSource(key) || key}
+                            ${info.name || this.formatDataSource(key) || key}
                         </span>
-                        <span class="stats-source-count">${count}</span>
+                        <span class="stats-source-count">${info.devices}</span>
                     </div>
                 `).join('');
         } else {
@@ -11207,14 +11207,15 @@ class Respiro {
                 return '<div class="stats-empty">No data</div>';
             }
             return Object.entries(sources)
-                .sort(([a], [b]) => (this.formatDataSource(a) || a).localeCompare(this.formatDataSource(b) || b))
+                .sort(([a, ad], [b, bd]) => ((ad?.name || a)).localeCompare(bd?.name || b))
                 .map(([key, data]) => {
                     const count = data ? data.devices : 0;
+                    const displayName = data?.name || this.formatDataSource(key) || key;
                     return `
                         <div class="stats-source-row">
                             <span class="stats-source-name">
                                 <span class="source-dot ${this.getSourceDotClass(key)}"></span>
-                                ${this.formatDataSource(key) || key}
+                                ${displayName}
                             </span>
                             <span class="stats-source-count${count === 0 ? ' style="color:var(--text-muted)"' : ''}">${count} <span style="color:var(--text-muted);font-weight:400;font-size:12px">devices</span></span>
                         </div>
