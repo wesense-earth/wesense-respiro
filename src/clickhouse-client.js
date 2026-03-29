@@ -1217,7 +1217,7 @@ class ClickHouseClient {
             const knownSources = [
                 // New standardised lowercase keys
                 'wesense', 'meshtastic', 'home_assistant',
-                'ecan', 'tasman', 'nelson', 'marlborough', 'hawkes_bay',
+                'ecan', 'tasman', 'nelson', 'marlborough', 'hawkesbay',
                 'gisborne', 'horizons', 'westcoast',
                 // Legacy uppercase keys (kept during migration)
                 'MESHTASTIC', 'MESHTASTIC_PUBLIC', 'MESHTASTIC_COMMUNITY',
