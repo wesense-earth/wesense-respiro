@@ -10836,23 +10836,8 @@ class Respiro {
     formatDataSource(source, dataSourceName) {
         // Prefer data_source_name from ClickHouse if available
         if (dataSourceName) return dataSourceName;
-        // Fallback map for legacy and new data_source keys
         if (!source) return null;
-        const map = {
-            'wesense': 'WeSense',
-            'meshtastic': 'Meshtastic',
-            'home_assistant': 'Home Assistant',
-            'ecan': 'Environment Canterbury',
-            'tasman': 'Tasman District Council',
-            'nelson': 'Nelson City Council',
-            'marlborough': 'Marlborough District Council',
-            'hawkesbay': "Hawke's Bay Regional Council",
-            'gisborne': 'Gisborne District Council',
-            'horizons': 'Horizons Regional Council',
-            'westcoast': 'West Coast Regional Council',
-        };
-        if (map[source]) return map[source];
-        // Auto-format unknown sources: "new_source_name" -> "New Source Name"
+        // Auto-format: "new_source_name" -> "New Source Name"
         return source.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
     }
 

@@ -1200,6 +1200,7 @@ class ClickHouseClient {
                 SELECT
                     received_via,
                     data_source,
+                    argMax(data_source_name, timestamp) as data_source_name,
                     uniqExact(device_id) as device_count,
                     count() as reading_count
                 FROM sensor_readings
@@ -1211,22 +1212,16 @@ class ClickHouseClient {
             const result = await this.client.query({ query, format: 'JSONEachRow' });
             const rows = await result.json();
 
-            const knownSources = [
-                'wesense', 'meshtastic', 'home_assistant',
-                'ecan', 'tasman', 'nelson', 'marlborough', 'hawkesbay',
-                'gisborne', 'horizons', 'westcoast',
-            ];
-            const emptySource = { devices: 0, readings: 0 };
-
             const contribution = {
-                local: Object.fromEntries(knownSources.map(s => [s, { ...emptySource }])),
-                p2p: Object.fromEntries(knownSources.map(s => [s, { ...emptySource }]))
+                local: {},
+                p2p: {}
             };
             for (const row of rows) {
                 const via = row.received_via === 'p2p' ? 'p2p' : 'local';
                 contribution[via][row.data_source] = {
                     devices: parseInt(row.device_count),
-                    readings: parseInt(row.reading_count)
+                    readings: parseInt(row.reading_count),
+                    name: row.data_source_name || row.data_source,
                 };
             }
 
