@@ -26,12 +26,17 @@ const MIN_SWARM_SIZE = 5;
 // Freshness thresholds per data source (in milliseconds)
 // Only sensors reporting within these thresholds are considered "active" for swarm membership
 const FRESHNESS_THRESHOLDS = {
-    'WESENSE': 10 * 60 * 1000,              // 10 minutes
-    'CHIRPSTACK': 10 * 60 * 1000,           // 10 minutes (self-hosted LoRaWAN)
-    'TTN': 10 * 60 * 1000,                  // 10 minutes (TTN LoRaWAN)
-    'MESHTASTIC_PUBLIC': 61 * 60 * 1000,    // 61 minutes
-    'MESHTASTIC_COMMUNITY': 61 * 60 * 1000, // 61 minutes
-    'MESHTASTIC_DOWNLINK': 61 * 60 * 1000,  // 61 minutes
+    'wesense': 10 * 60 * 1000,              // 10 minutes
+    'meshtastic': 61 * 60 * 1000,           // 61 minutes
+    'home_assistant': 10 * 60 * 1000,       // 10 minutes
+    'ecan': 15 * 60 * 1000,                 // 15 minutes
+    'tasman': 15 * 60 * 1000,
+    'nelson': 15 * 60 * 1000,
+    'marlborough': 15 * 60 * 1000,
+    'hawkesbay': 15 * 60 * 1000,
+    'gisborne': 15 * 60 * 1000,
+    'horizons': 15 * 60 * 1000,
+    'westcoast': 15 * 60 * 1000,
     'default': 10 * 60 * 1000               // Conservative default
 };
 

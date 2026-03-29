@@ -63,11 +63,8 @@ class ClickHouseClient {
                     argMax(geo_subdivision, timestamp) as geo_subdivision,
                     argMax(node_name, timestamp) as node_name,
                     argMax(board_model, timestamp) as board_model,
-                    IF(
-                        countIf(data_source = 'MESHTASTIC_COMMUNITY') > 0,
-                        'MESHTASTIC_COMMUNITY',
-                        argMax(data_source, timestamp)
-                    ) as data_source,
+                    argMax(data_source, timestamp) as data_source,
+                    argMax(data_source_name, timestamp) as data_source_name,
                     argMax(sensor_model, timestamp) as sensor_model,
                     argMax(unit, timestamp) as unit,
                     argMax(deployment_location, timestamp) as deployment_location,
@@ -1215,14 +1212,9 @@ class ClickHouseClient {
             const rows = await result.json();
 
             const knownSources = [
-                // New standardised lowercase keys
                 'wesense', 'meshtastic', 'home_assistant',
                 'ecan', 'tasman', 'nelson', 'marlborough', 'hawkesbay',
                 'gisborne', 'horizons', 'westcoast',
-                // Legacy uppercase keys (kept during migration)
-                'MESHTASTIC', 'MESHTASTIC_PUBLIC', 'MESHTASTIC_COMMUNITY',
-                'MESHTASTIC_DOWNLINK', 'WESENSE', 'TTN', 'CHIRPSTACK',
-                'HOMEASSISTANT', 'HA_PLUGIN', 'GOVT_AQ', 'GOVT_AQ_NZ',
             ];
             const emptySource = { devices: 0, readings: 0 };
 

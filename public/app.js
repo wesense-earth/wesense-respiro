@@ -1,7 +1,6 @@
 // Data-source-aware freshness thresholds
 // WESENSE sensors report every 5 minutes, Meshtastic sensors report every 30-60 minutes
 const FRESHNESS_THRESHOLDS = {
-    // New standardised lowercase keys
     'wesense': 10 * 60 * 1000,              // 10 minutes
     'meshtastic': 61 * 60 * 1000,           // 61 minutes (catches 60-min reporters)
     'home_assistant': 10 * 60 * 1000,       // 10 minutes
@@ -13,17 +12,6 @@ const FRESHNESS_THRESHOLDS = {
     'gisborne': 15 * 60 * 1000,
     'horizons': 15 * 60 * 1000,
     'westcoast': 15 * 60 * 1000,
-    // Legacy uppercase keys (kept during migration)
-    'WESENSE': 10 * 60 * 1000,
-    'CHIRPSTACK': 10 * 60 * 1000,
-    'TTN': 10 * 60 * 1000,
-    'MESHTASTIC_PUBLIC': 61 * 60 * 1000,
-    'MESHTASTIC_COMMUNITY': 61 * 60 * 1000,
-    'MESHTASTIC_DOWNLINK': 61 * 60 * 1000,
-    'GOVT_AQ': 15 * 60 * 1000,
-    'GOVT_AQ_NZ': 15 * 60 * 1000,
-    'HOMEASSISTANT': 10 * 60 * 1000,
-    'HA_PLUGIN': 10 * 60 * 1000,
     'default': 10 * 60 * 1000               // Conservative default
 };
 
@@ -5148,7 +5136,7 @@ class NewDashboardLayout {
         const deviceList = this.outdoorDeviceIds.join(',');
         const metrics = ['temperature', 'humidity', 'pressure'];
         // Use longest threshold for aggregate data (may include Meshtastic sensors)
-        const aggregateFreshnessThreshold = FRESHNESS_THRESHOLDS['MESHTASTIC_PUBLIC'];
+        const aggregateFreshnessThreshold = FRESHNESS_THRESHOLDS['meshtastic'];
         const now = Date.now();
 
         try {
@@ -8927,7 +8915,7 @@ class Respiro {
                 if (sensor.deviceId.startsWith('!') || sensor.deviceId.startsWith('meshtastic_')) {
                     dataSource = 'MESHTASTIC';
                 } else if (sensor.deviceId.includes('_')) {
-                    dataSource = 'WESENSE';
+                    dataSource = 'wesense';
                 } else {
                     dataSource = 'UNKNOWN';
                 }
@@ -9186,7 +9174,7 @@ class Respiro {
                     if (sensor.deviceId.startsWith('!') || sensor.deviceId.startsWith('meshtastic_')) {
                         dataSource = 'MESHTASTIC';
                     } else if (sensor.deviceId.includes('_')) {
-                        dataSource = 'WESENSE';
+                        dataSource = 'wesense';
                     } else {
                         dataSource = 'UNKNOWN';
                     }
@@ -9290,7 +9278,7 @@ class Respiro {
                     if (sensor.deviceId.startsWith('!') || sensor.deviceId.startsWith('meshtastic_')) {
                         dataSource = 'MESHTASTIC';
                     } else if (sensor.deviceId.includes('_')) {
-                        dataSource = 'WESENSE';
+                        dataSource = 'wesense';
                     } else {
                         dataSource = 'UNKNOWN';
                     }
@@ -10799,7 +10787,7 @@ class Respiro {
                 const raw = reading.raw;
 
                 // Prefer Meshtastic readings with board_model
-                if ((raw.data_source === 'MESHTASTIC' || raw.data_source === 'MESHTASTIC_PUBLIC' || raw.data_source === 'MESHTASTIC_COMMUNITY') && raw.board_model) {
+                if (raw.data_source === 'meshtastic' && raw.board_model) {
                     return {
                         type: this.formatDataSource(raw.data_source),
                         board: raw.board_model
@@ -10821,7 +10809,7 @@ class Respiro {
             if (reading.raw && Object.keys(reading.raw).length > 0) {
                 const raw = reading.raw;
 
-                if (raw.data_source === 'MESHTASTIC' || raw.data_source === 'MESHTASTIC_PUBLIC' || raw.data_source === 'MESHTASTIC_COMMUNITY') {
+                if (raw.data_source === 'meshtastic') {
                     return {
                         type: this.formatDataSource(raw.data_source),
                         board: null
@@ -10851,7 +10839,6 @@ class Respiro {
         // Fallback map for legacy and new data_source keys
         if (!source) return null;
         const map = {
-            // New standardised lowercase keys
             'wesense': 'WeSense',
             'meshtastic': 'Meshtastic',
             'home_assistant': 'Home Assistant',
@@ -10863,18 +10850,6 @@ class Respiro {
             'gisborne': 'Gisborne District Council',
             'horizons': 'Horizons Regional Council',
             'westcoast': 'West Coast Regional Council',
-            // Legacy uppercase keys (kept during migration)
-            'MESHTASTIC': 'Meshtastic',
-            'MESHTASTIC_PUBLIC': 'Meshtastic',
-            'MESHTASTIC_COMMUNITY': 'Meshtastic',
-            'MESHTASTIC_DOWNLINK': 'Meshtastic',
-            'WESENSE': 'WeSense',
-            'TTN': 'WeSense',
-            'CHIRPSTACK': 'WeSense',
-            'HOMEASSISTANT': 'Home Assistant',
-            'HA_PLUGIN': 'Home Assistant',
-            'GOVT_AQ': 'NZ Govt Stations',
-            'GOVT_AQ_NZ': 'NZ Govt Stations',
         };
         if (map[source]) return map[source];
         // Auto-format unknown sources: "new_source_name" -> "New Source Name"
@@ -10933,7 +10908,6 @@ class Respiro {
         // unknown sources get 'default' (grey). New sources appear automatically
         // without needing CSS changes — add a named class later for branding.
         const map = {
-            // New standardised lowercase keys
             'wesense': 'wesense',
             'meshtastic': 'meshtastic-community',
             'home_assistant': 'homeassistant',
@@ -10945,16 +10919,6 @@ class Respiro {
             'gisborne': 'govt-aq-nz',
             'horizons': 'govt-aq-nz',
             'westcoast': 'govt-aq-nz',
-            // Legacy uppercase keys (kept during migration)
-            'WESENSE': 'wesense',
-            'CHIRPSTACK': 'wesense',
-            'TTN': 'wesense',
-            'MESHTASTIC_DOWNLINK': 'meshtastic-community',
-            'MESHTASTIC_COMMUNITY': 'meshtastic-community',
-            'HOMEASSISTANT': 'homeassistant',
-            'HA_PLUGIN': 'homeassistant',
-            'GOVT_AQ': 'govt-aq-nz',
-            'GOVT_AQ_NZ': 'govt-aq-nz',
         };
         return map[source] || 'default';
     }
