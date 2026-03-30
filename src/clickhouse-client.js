@@ -1311,7 +1311,11 @@ class ClickHouseClient {
             const allTypesRows = await allTypesResult.json();
 
             // Canonical reading types — union with all-time DB types
-            const canonicalTypes = ['temperature', 'humidity', 'pressure', 'co2', 'pm1_0', 'pm2_5', 'pm10', 'voc_index', 'nox_index'];
+            const canonicalTypes = [
+                'temperature', 'humidity', 'pressure', 'co2',
+                'pm1_0', 'pm2_5', 'pm10',
+                'voc_index', 'nox_index',
+            ];
             const dbTypes = allTypesRows.map(r => r.reading_type).filter(Boolean);
             const allReadingTypes = [...new Set([...canonicalTypes, ...dbTypes])];
 
