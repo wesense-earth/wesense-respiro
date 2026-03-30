@@ -46,6 +46,9 @@ COPY package*.json ./
 # Install production dependencies
 RUN npm ci --only=production
 
+# Bust cache for application code on every CI build
+ARG CACHE_BUST=1
+
 # Copy application source
 COPY src/ ./src/
 COPY public/ ./public/
