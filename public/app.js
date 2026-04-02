@@ -11911,12 +11911,22 @@ class Respiro {
         });
 
         // On load, switch to the view specified in the URL hash
-        const hash = window.location.hash.replace('#', '');
-        if (hash && ['map', 'dashboard', 'stats'].includes(hash)) {
-            this.switchView(hash);
+        // Supports #map, #dashboard, #stats and optional params e.g. #map&zoom=3
+        const hashParts = window.location.hash.replace('#', '').split('&');
+        const hashView = hashParts[0];
+        if (hashView && ['map', 'dashboard', 'stats'].includes(hashView)) {
+            this.switchView(hashView);
             navTabs.forEach(t => {
-                t.classList.toggle('active', t.dataset.view === hash);
+                t.classList.toggle('active', t.dataset.view === hashView);
             });
+
+            // Apply hash parameters (e.g. zoom=3)
+            for (const part of hashParts.slice(1)) {
+                const [key, val] = part.split('=');
+                if (key === 'zoom' && val && this.map) {
+                    this.map.setZoom(parseInt(val));
+                }
+            }
         }
     }
 
