@@ -11904,8 +11904,20 @@ class Respiro {
                 // Update active tab
                 navTabs.forEach(t => t.classList.remove('active'));
                 tab.classList.add('active');
+
+                // Update URL hash without scrolling
+                history.replaceState(null, '', `#${view}`);
             });
         });
+
+        // On load, switch to the view specified in the URL hash
+        const hash = window.location.hash.replace('#', '');
+        if (hash && ['map', 'dashboard', 'stats'].includes(hash)) {
+            this.switchView(hash);
+            navTabs.forEach(t => {
+                t.classList.toggle('active', t.dataset.view === hash);
+            });
+        }
     }
 
     switchView(view) {
