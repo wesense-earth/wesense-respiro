@@ -13,6 +13,14 @@ require('dotenv').config();
 const ClickHouseClient = require('./clickhouse-client');
 const RegionService = require('./region-service');
 
+// Internal TLS: upgrade http:// URLs to https:// when TLS_ENABLED
+const tlsUpgrade = (url) => {
+    if (process.env.TLS_ENABLED === 'true' && url) {
+        return url.replace('http://', 'https://');
+    }
+    return url;
+};
+
 // =============================================================================
 // H3 Swarm Configuration
 // =============================================================================
@@ -1607,7 +1615,7 @@ app.get('/api/stats/overview', async (req, res) => {
 });
 
 // OrbitDB proxy endpoints (gated on ORBITDB_URL env var)
-const ORBITDB_URL = process.env.ORBITDB_URL;
+const ORBITDB_URL = tlsUpgrade(process.env.ORBITDB_URL);
 if (ORBITDB_URL) {
     console.log(`OrbitDB proxy enabled → ${ORBITDB_URL}`);
 
@@ -1712,7 +1720,7 @@ if (GATEWAY_URL) {
 }
 
 // Archive Replicator proxy endpoints (gated on ARCHIVE_REPLICATOR_URL env var)
-const ARCHIVE_REPLICATOR_URL = process.env.ARCHIVE_REPLICATOR_URL;
+const ARCHIVE_REPLICATOR_URL = tlsUpgrade(process.env.ARCHIVE_REPLICATOR_URL);
 if (ARCHIVE_REPLICATOR_URL) {
     console.log(`Archive replicator proxy enabled → ${ARCHIVE_REPLICATOR_URL}`);
 
@@ -1736,7 +1744,7 @@ if (ARCHIVE_REPLICATOR_URL) {
 }
 
 // Live Transport stats proxy (gated on LIVE_TRANSPORT_URL env var)
-const LIVE_TRANSPORT_URL = process.env.LIVE_TRANSPORT_URL;
+const LIVE_TRANSPORT_URL = tlsUpgrade(process.env.LIVE_TRANSPORT_URL);
 if (LIVE_TRANSPORT_URL) {
     console.log(`Live transport proxy enabled → ${LIVE_TRANSPORT_URL}`);
 

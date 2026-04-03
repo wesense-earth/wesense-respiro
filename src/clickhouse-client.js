@@ -1,4 +1,6 @@
 const { createClient } = require('@clickhouse/client');
+const fs = require('fs');
+const https = require('https');
 
 class ClickHouseClient {
     constructor() {
@@ -9,18 +11,32 @@ class ClickHouseClient {
     async connect({ quiet = false } = {}) {
         try {
             const host = process.env.CLICKHOUSE_HOST || 'localhost';
-            const port = process.env.CLICKHOUSE_PORT || '8123';
+            const tlsEnabled = process.env.TLS_ENABLED === 'true';
+            const port = process.env.CLICKHOUSE_PORT || (tlsEnabled ? '8443' : '8123');
+            const protocol = tlsEnabled ? 'https' : 'http';
             const database = process.env.CLICKHOUSE_DATABASE || 'wesense';
             const username = process.env.CLICKHOUSE_USERNAME || 'wesense';
             const password = process.env.CLICKHOUSE_PASSWORD || '';
 
-            this.client = createClient({
-                url: `http://${host}:${port}`,
+            const clientOpts = {
+                url: `${protocol}://${host}:${port}`,
                 database,
                 username,
                 password,
                 request_timeout: 300000,  // 5 minutes for background precomputation queries
-            });
+            };
+
+            // Trust deployment CA for self-signed certs
+            if (tlsEnabled) {
+                const caFile = process.env.TLS_CA_CERTFILE;
+                if (caFile && fs.existsSync(caFile)) {
+                    clientOpts.tls = {
+                        ca_cert: fs.readFileSync(caFile),
+                    };
+                }
+            }
+
+            this.client = createClient(clientOpts);
 
             // Test connection
             const result = await this.client.query({ query: 'SELECT 1' });
