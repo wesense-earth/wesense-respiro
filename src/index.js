@@ -1711,14 +1711,14 @@ if (GATEWAY_URL) {
     app.post('/api/archive/trigger', (req, res) => res.json({ status: 'not_configured' }));
 }
 
-// Iroh Sidecar proxy endpoints (gated on IROH_SIDECAR_URL env var)
-const IROH_SIDECAR_URL = process.env.IROH_SIDECAR_URL;
-if (IROH_SIDECAR_URL) {
-    console.log(`Iroh sidecar proxy enabled → ${IROH_SIDECAR_URL}`);
+// Archive Replicator proxy endpoints (gated on ARCHIVE_REPLICATOR_URL env var)
+const ARCHIVE_REPLICATOR_URL = process.env.ARCHIVE_REPLICATOR_URL;
+if (ARCHIVE_REPLICATOR_URL) {
+    console.log(`Archive replicator proxy enabled → ${ARCHIVE_REPLICATOR_URL}`);
 
     const proxyToIroh = (endpoint) => async (req, res) => {
         try {
-            const url = new URL(endpoint, IROH_SIDECAR_URL);
+            const url = new URL(endpoint, ARCHIVE_REPLICATOR_URL);
             const response = await fetch(url.toString(), {
                 signal: AbortSignal.timeout(30000),
             });
@@ -1735,14 +1735,14 @@ if (IROH_SIDECAR_URL) {
     app.get('/api/stats/iroh', (req, res) => res.json({ status: 'not_configured' }));
 }
 
-// Zenoh Bridge stats proxy (gated on ZENOH_BRIDGE_URL env var)
-const ZENOH_BRIDGE_URL = process.env.ZENOH_BRIDGE_URL;
-if (ZENOH_BRIDGE_URL) {
-    console.log(`Zenoh bridge proxy enabled → ${ZENOH_BRIDGE_URL}`);
+// Live Transport stats proxy (gated on LIVE_TRANSPORT_URL env var)
+const LIVE_TRANSPORT_URL = process.env.LIVE_TRANSPORT_URL;
+if (LIVE_TRANSPORT_URL) {
+    console.log(`Live transport proxy enabled → ${LIVE_TRANSPORT_URL}`);
 
     app.get('/api/stats/zenoh-bridge', async (req, res) => {
         try {
-            const url = new URL('/stats', ZENOH_BRIDGE_URL);
+            const url = new URL('/stats', LIVE_TRANSPORT_URL);
             const response = await fetch(url.toString(), {
                 signal: AbortSignal.timeout(10000),
             });
@@ -1831,7 +1831,7 @@ app.get('/api/stats/network', async (req, res) => {
     }
 
     // Zenoh Bridge
-    const zbUrl = process.env.ZENOH_BRIDGE_URL || '';
+    const zbUrl = process.env.LIVE_TRANSPORT_URL || '';
     if (zbUrl) {
         try {
             const u = new URL(zbUrl);
@@ -1840,7 +1840,7 @@ app.get('/api/stats/network', async (req, res) => {
     }
 
     // Iroh Sidecar
-    const irohUrl = process.env.IROH_SIDECAR_URL || '';
+    const irohUrl = process.env.ARCHIVE_REPLICATOR_URL || '';
     if (irohUrl) {
         try {
             const u = new URL(irohUrl);
