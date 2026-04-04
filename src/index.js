@@ -1651,7 +1651,7 @@ if (ORBITDB_URL) {
 }
 
 // Gateway archive stats proxy (gated on GATEWAY_URL env var)
-const GATEWAY_URL = process.env.GATEWAY_URL;
+const GATEWAY_URL = tlsUpgrade(process.env.GATEWAY_URL);
 if (GATEWAY_URL) {
     console.log(`Gateway proxy enabled → ${GATEWAY_URL}`);
 
