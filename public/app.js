@@ -11112,9 +11112,11 @@ class Respiro {
             this.setHealthIndicator('healthMqtt', 'unknown');
         }
 
-        // Storage Broker — check via archive stats availability
-        if (typeof r.arch === 'object' && r.arch.archive) {
+        // Storage Broker — check via archive replicator connectivity (if iroh is up, gateway is up)
+        if (iroh && iroh.node_id) {
             this.setHealthIndicator('healthGateway', 'healthy');
+        } else if (iroh && iroh.status === 'not_configured') {
+            this.setHealthIndicator('healthGateway', 'unknown');
         } else {
             this.setHealthIndicator('healthGateway', 'offline');
         }
