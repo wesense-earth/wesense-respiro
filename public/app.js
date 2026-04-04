@@ -11716,7 +11716,7 @@ class Respiro {
                 const repl = iroh.replication || {};
                 irohEl.innerHTML = `
                     <div class="stats-mono-row stats-mono">Node ID: ${this.statsEscapeHtml(iroh.node_id)}</div>
-                    <div class="stats-mono-row stats-mono">Store Scope: ${(iroh.store_scope || []).map(s => this.statsEscapeHtml(s)).join(', ') || 'none (announce-only)'}</div>
+                    <div class="stats-mono-row stats-mono">Guardian Scope: ${(iroh.guardian_scope || []).map(s => this.statsEscapeHtml(s)).join(', ') || 'none (announce-only)'}</div>
                     <div class="stats-mono-row stats-mono">Blobs: ${iroh.blob_count ?? 0}</div>
                     ${relayHtml}
                     <div class="stats-mono-row stats-mono">Replicated: ${repl.replicated ?? 0} | Skipped: ${(repl.skipped_existing ?? 0) + (repl.skipped_scope ?? 0)} | Failed: ${repl.failed ?? 0}</div>
