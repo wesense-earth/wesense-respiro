@@ -1805,27 +1805,35 @@ app.get('/api/stats/network', async (req, res) => {
 
     // Determine which services to check based on env vars
     const checks = [];
+    const isTLS = process.env.TLS_ENABLED === 'true';
 
     // ClickHouse
     const chHost = process.env.CLICKHOUSE_HOST || 'clickhouse';
-    const chPort = parseInt(process.env.CLICKHOUSE_PORT || '8123', 10);
+    const chPort = isTLS ? 8443 : parseInt(process.env.CLICKHOUSE_PORT || '8123', 10);
     checks.push({ name: 'ClickHouse', host: chHost, port: chPort, internal: true });
 
-    // MQTT
+    // MQTT (EMQX)
     const mqttUrl = process.env.MQTT_BROKER_URL || '';
     if (mqttUrl) {
         try {
             const u = new URL(mqttUrl);
-            checks.push({ name: 'MQTT (EMQX)', host: u.hostname, port: parseInt(u.port || '1883', 10), internal: true });
+            checks.push({ name: 'EMQX', host: u.hostname, port: parseInt(u.port || '1883', 10), internal: true });
         } catch {}
     }
 
     // OrbitDB
-    const orbitUrl = process.env.ORBITDB_URL || '';
-    if (orbitUrl) {
+    if (ORBITDB_URL) {
         try {
-            const u = new URL(orbitUrl);
+            const u = new URL(ORBITDB_URL);
             checks.push({ name: 'OrbitDB', host: u.hostname, port: parseInt(u.port || '5200', 10), internal: true });
+        } catch {}
+    }
+
+    // Storage Broker
+    if (GATEWAY_URL) {
+        try {
+            const u = new URL(GATEWAY_URL);
+            checks.push({ name: 'Storage Broker', host: u.hostname, port: parseInt(u.port || '8080', 10), internal: true });
         } catch {}
     }
 
@@ -1838,21 +1846,19 @@ app.get('/api/stats/network', async (req, res) => {
         } catch {}
     }
 
-    // Zenoh Bridge
-    const zbUrl = process.env.LIVE_TRANSPORT_URL || '';
-    if (zbUrl) {
+    // Live Transport
+    if (LIVE_TRANSPORT_URL) {
         try {
-            const u = new URL(zbUrl);
-            checks.push({ name: 'Zenoh Bridge', host: u.hostname, port: parseInt(u.port || '5300', 10), internal: true });
+            const u = new URL(LIVE_TRANSPORT_URL);
+            checks.push({ name: 'Live Transport', host: u.hostname, port: parseInt(u.port || '5300', 10), internal: true });
         } catch {}
     }
 
-    // Iroh Sidecar
-    const irohUrl = process.env.ARCHIVE_REPLICATOR_URL || '';
-    if (irohUrl) {
+    // Archive Replicator
+    if (ARCHIVE_REPLICATOR_URL) {
         try {
-            const u = new URL(irohUrl);
-            checks.push({ name: 'Iroh Sidecar', host: u.hostname, port: parseInt(u.port || '4400', 10), internal: true });
+            const u = new URL(ARCHIVE_REPLICATOR_URL);
+            checks.push({ name: 'Archive Replicator', host: u.hostname, port: parseInt(u.port || '4400', 10), internal: true });
         } catch {}
     }
 

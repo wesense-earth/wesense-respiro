@@ -8908,29 +8908,37 @@
                         </div>
                     </div>
 
-                    <!-- Network Health -->
+                    <!-- Service Health -->
                     <div class="stats-card">
-                        <div class="stats-card-title">Network Health</div>
+                        <div class="stats-card-title">Service Health</div>
                         <div id="statsHealth">
                             <div class="stats-health-row">
                                 <span class="stats-health-label">ClickHouse</span>
                                 <span class="health-dot unknown" id="healthClickhouse"></span>
                             </div>
                             <div class="stats-health-row">
+                                <span class="stats-health-label">EMQX</span>
+                                <span class="health-dot unknown" id="healthMqtt"></span>
+                            </div>
+                            <div class="stats-health-row">
+                                <span class="stats-health-label">Storage Broker</span>
+                                <span class="health-dot unknown" id="healthGateway"></span>
+                            </div>
+                            <div class="stats-health-row">
+                                <span class="stats-health-label">Archive Replicator</span>
+                                <span class="health-dot unknown" id="healthIroh"></span>
+                            </div>
+                            <div class="stats-health-row">
                                 <span class="stats-health-label">OrbitDB</span>
                                 <span class="health-dot unknown" id="healthOrbitdb"></span>
                             </div>
                             <div class="stats-health-row">
-                                <span class="stats-health-label">Zenoh Bridge</span>
+                                <span class="stats-health-label">Live Transport</span>
                                 <span class="health-dot unknown" id="healthZenoh"></span>
                             </div>
                             <div class="stats-health-row">
-                                <span class="stats-health-label">MQTT Broker</span>
-                                <span class="health-dot unknown" id="healthMqtt"></span>
-                            </div>
-                            <div class="stats-health-row">
-                                <span class="stats-health-label">Iroh Sidecar</span>
-                                <span class="health-dot unknown" id="healthIroh"></span>
+                                <span class="stats-health-label">Zenoh API</span>
+                                <span class="health-dot unknown" id="healthZenohApi"></span>
                             </div>
                         </div>
                     </div>
@@ -9025,9 +9033,9 @@
                         </div>
                     </div>
 
-                    <!-- Network Ports -->
+                    <!-- Service Connectivity -->
                     <div class="stats-debug-card">
-                        <div class="stats-debug-card-title">Network Ports</div>
+                        <div class="stats-debug-card-title">Service Connectivity</div>
                         <div id="debugNetworkPorts">
                             <div class="stats-empty">Loading...</div>
                         </div>

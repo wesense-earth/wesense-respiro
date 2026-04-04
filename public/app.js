@@ -11102,9 +11102,33 @@ class Respiro {
             coverageSubEl.textContent = 'countries / regions';
         }
 
-        // Health indicators
+        // Service health indicators
         this.setHealthIndicator('healthClickhouse', overview.clickhouse_connected ? 'healthy' : 'offline');
 
+        // EMQX — infer from whether we have real-time data
+        if (overview.active_devices > 0) {
+            this.setHealthIndicator('healthMqtt', 'healthy');
+        } else {
+            this.setHealthIndicator('healthMqtt', 'unknown');
+        }
+
+        // Storage Broker — check via archive stats availability
+        if (typeof r.arch === 'object' && r.arch.archive) {
+            this.setHealthIndicator('healthGateway', 'healthy');
+        } else {
+            this.setHealthIndicator('healthGateway', 'offline');
+        }
+
+        // Archive Replicator
+        if (iroh && iroh.status === 'not_configured') {
+            this.setHealthIndicator('healthIroh', 'unknown');
+        } else if (iroh && iroh.node_id) {
+            this.setHealthIndicator('healthIroh', 'healthy');
+        } else {
+            this.setHealthIndicator('healthIroh', 'offline');
+        }
+
+        // OrbitDB
         if (orbitdb && orbitdb.status === 'not_configured') {
             this.setHealthIndicator('healthOrbitdb', 'unknown');
         } else if (orbitdb && orbitdb.peer_count != null) {
@@ -11113,28 +11137,22 @@ class Respiro {
             this.setHealthIndicator('healthOrbitdb', 'offline');
         }
 
-        if (zenoh && zenoh.status === 'not_configured') {
+        // Live Transport
+        if (zenohBridge && zenohBridge.status === 'not_configured') {
             this.setHealthIndicator('healthZenoh', 'unknown');
-        } else if (zenoh && zenoh.status) {
-            this.setHealthIndicator('healthZenoh', zenoh.status === 'healthy' || zenoh.zenoh_connected ? 'healthy' : 'degraded');
+        } else if (zenohBridge && (zenohBridge.received != null || zenohBridge.bridge_enabled != null)) {
+            this.setHealthIndicator('healthZenoh', 'healthy');
         } else {
             this.setHealthIndicator('healthZenoh', 'offline');
         }
 
-        // MQTT — infer from whether we have real-time data
-        if (overview.active_devices > 0) {
-            this.setHealthIndicator('healthMqtt', 'healthy');
+        // Zenoh API
+        if (zenoh && zenoh.status === 'not_configured') {
+            this.setHealthIndicator('healthZenohApi', 'unknown');
+        } else if (zenoh && zenoh.status) {
+            this.setHealthIndicator('healthZenohApi', zenoh.status === 'healthy' || zenoh.zenoh_connected ? 'healthy' : 'degraded');
         } else {
-            this.setHealthIndicator('healthMqtt', 'unknown');
-        }
-
-        // Iroh Sidecar
-        if (iroh && iroh.status === 'not_configured') {
-            this.setHealthIndicator('healthIroh', 'unknown');
-        } else if (iroh && iroh.node_id) {
-            this.setHealthIndicator('healthIroh', 'healthy');
-        } else {
-            this.setHealthIndicator('healthIroh', 'offline');
+            this.setHealthIndicator('healthZenohApi', 'offline');
         }
 
         // Coverage Details
