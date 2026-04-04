@@ -12,7 +12,7 @@ class ClickHouseClient {
         try {
             const host = process.env.CLICKHOUSE_HOST || 'localhost';
             const tlsEnabled = process.env.TLS_ENABLED === 'true';
-            const port = process.env.CLICKHOUSE_PORT || (tlsEnabled ? '8443' : '8123');
+            const port = tlsEnabled ? '8443' : (process.env.CLICKHOUSE_PORT || '8123');
             const protocol = tlsEnabled ? 'https' : 'http';
             const database = process.env.CLICKHOUSE_DATABASE || 'wesense';
             const username = process.env.CLICKHOUSE_USERNAME || 'wesense';
