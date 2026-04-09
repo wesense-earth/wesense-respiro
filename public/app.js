@@ -9434,7 +9434,7 @@ class Respiro {
                 parseFloat(this.getMapConfig('MAP_CENTER_LNG') || '174.763')
             ];
         }
-        const zoomLevel = parseInt(this.getMapConfig('MAP_ZOOM_LEVEL') || '4');
+        const zoomLevel = parseInt(this.getMapConfig('MAP_ZOOM_LEVEL') || '3');
 
         this.map = L.map('map', {
             maxBounds: [[-90, -180], [90, 180]],
@@ -9719,7 +9719,7 @@ class Respiro {
         const defaults = {
             'MAP_CENTER_LAT': '-36.848',
             'MAP_CENTER_LNG': '174.763',
-            'MAP_ZOOM_LEVEL': '10',
+            'MAP_ZOOM_LEVEL': '3',
             'MAP_LANGUAGE': 'auto',  // 'auto', 'en', or 'local'
         };
         return defaults[key];
