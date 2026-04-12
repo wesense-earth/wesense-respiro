@@ -11411,58 +11411,83 @@ class Respiro {
             return;
         }
 
-        let html = '<table class="stats-table"><tbody>';
+        // ISO 3166-1 country code to name lookup
+        const countryName = (code) => {
+            try {
+                const name = new Intl.DisplayNames(['en'], { type: 'region' }).of(code.toUpperCase());
+                return name || code.toUpperCase();
+            } catch { return code.toUpperCase(); }
+        };
+
+        let html = '';
 
         // ClickHouse section
         if (data.clickhouse && !data.clickhouse.error) {
             const ch = data.clickhouse;
-            html += '<tr><td colspan="2" style="font-weight:600;padding-top:8px">ClickHouse</td></tr>';
+            html += '<table class="stats-table"><tbody>';
+            html += '<tr><td colspan="2" style="font-weight:600">Sensor Database (ClickHouse)</td></tr>';
             if (ch.sensor_readings) {
-                html += `<tr><td>Sensor readings</td><td>${ch.sensor_readings.size} (${Number(ch.sensor_readings.rows).toLocaleString()} rows)</td></tr>`;
+                const sr = ch.sensor_readings;
+                html += `<tr><td>Total readings</td><td>${Number(sr.rows).toLocaleString()} readings${sr.disk_size ? ' (' + sr.disk_size + ')' : ''}</td></tr>`;
+                html += `<tr><td>Devices</td><td>${Number(sr.devices).toLocaleString()} devices</td></tr>`;
+                html += `<tr><td>Countries</td><td>${Number(sr.countries).toLocaleString()} countries</td></tr>`;
+                html += `<tr><td>Regions</td><td>${Number(sr.regions).toLocaleString()} regions</td></tr>`;
+                if (sr.earliest) html += `<tr><td>Earliest reading</td><td>${sr.earliest}</td></tr>`;
+                if (sr.latest) html += `<tr><td>Latest reading</td><td>${sr.latest}</td></tr>`;
             }
-            if (ch.system_logs) {
-                html += `<tr><td>System logs</td><td>${ch.system_logs.size}</td></tr>`;
+            if (ch.system_logs_size) {
+                html += `<tr><td>System logs</td><td>${ch.system_logs_size}</td></tr>`;
             }
-            if (ch.total) {
-                html += `<tr><td>Total ClickHouse</td><td style="font-weight:600">${ch.total.size}</td></tr>`;
+            if (ch.total_disk_size) {
+                html += `<tr><td style="font-weight:500">Total disk usage</td><td style="font-weight:500">${ch.total_disk_size}</td></tr>`;
             }
+            if (ch.by_reading_type && ch.by_reading_type.length > 0) {
+                html += '<tr><td colspan="2" style="padding-top:8px;font-weight:500">By reading type</td></tr>';
+                for (const t of ch.by_reading_type) {
+                    html += `<tr><td style="padding-left:16px">${t.type}</td><td>${Number(t.rows).toLocaleString()} readings (${t.devices} devices)</td></tr>`;
+                }
+            }
+            html += '</tbody></table>';
         } else if (data.clickhouse && data.clickhouse.error) {
-            html += `<tr><td>ClickHouse</td><td style="color:var(--danger)">${data.clickhouse.error}</td></tr>`;
+            html += `<div style="color:var(--danger);padding:8px">${data.clickhouse.error}</div>`;
         }
 
         // Archives section
         if (data.archives && !data.archives.error) {
             const ar = data.archives;
-            html += '<tr><td colspan="2" style="font-weight:600;padding-top:12px">Archives (Parquet)</td></tr>';
+            html += '<table class="stats-table" style="margin-top:16px"><tbody>';
+            html += '<tr><td colspan="2" style="font-weight:600">Archives (Parquet)</td></tr>';
             if (ar.path_index_entries != null) {
-                html += `<tr><td>Total archives</td><td>${Number(ar.path_index_entries).toLocaleString()}</td></tr>`;
-            }
-            if (ar.total_size) {
+                html += `<tr><td>Total archives</td><td>${Number(ar.path_index_entries).toLocaleString()} archives${ar.total_size ? ' (' + ar.total_size + ')' : ''}</td></tr>`;
+            } else if (ar.total_size) {
                 html += `<tr><td>Total size</td><td>${ar.total_size}</td></tr>`;
             }
             if (ar.scope) {
                 html += `<tr><td>Storage scope</td><td><code>${ar.scope}</code></td></tr>`;
             }
+            html += '</tbody></table>';
             if (ar.by_country && ar.by_country.length > 0) {
-                const top10 = ar.by_country.slice(0, 10);
-                const rest = ar.by_country.slice(10);
-                const restCount = rest.reduce((s, c) => s + c.archives, 0);
-                html += '<tr><td colspan="2" style="padding-top:8px;font-weight:500">Archives by country</td></tr>';
-                for (const c of top10) {
-                    html += `<tr><td style="padding-left:16px">${c.country.toUpperCase()}</td><td>${Number(c.archives).toLocaleString()}</td></tr>`;
+                const totalArchives = ar.by_country.reduce((s, c) => s + c.archives, 0);
+                html += `<div style="font-weight:500;padding:8px 0 4px">Archives by country (${ar.by_country.length} countries, ${Number(totalArchives).toLocaleString()} total)</div>`;
+                html += '<input type="text" placeholder="Search countries..." style="width:100%;padding:6px 8px;margin-bottom:4px;border:1px solid var(--border-color);border-radius:4px;background:var(--bg-color);color:var(--text-color);font-size:0.85rem" oninput="this.nextElementSibling.querySelectorAll(\'tr[data-country]\').forEach(r=>{r.style.display=r.dataset.country.toLowerCase().includes(this.value.toLowerCase())||r.dataset.code.toLowerCase().includes(this.value.toLowerCase())?\'\':\' none\'})"/>';
+                html += '<div style="max-height:300px;overflow-y:auto;border:1px solid var(--border-color);border-radius:4px">';
+                html += '<table class="stats-table" style="margin:0"><tbody>';
+                html += '<tr style="position:sticky;top:0;background:var(--bg-secondary);font-weight:500"><td>Country</td><td>Archives</td></tr>';
+                for (const c of ar.by_country) {
+                    const name = countryName(c.country);
+                    html += `<tr data-country="${name}" data-code="${c.country}"><td>${name} <span style="color:var(--text-muted)">(${c.country.toUpperCase()})</span></td><td>${Number(c.archives).toLocaleString()} archives</td></tr>`;
                 }
-                if (rest.length > 0) {
-                    html += `<tr><td style="padding-left:16px;color:var(--text-muted)">${rest.length} other countries</td><td style="color:var(--text-muted)">${Number(restCount).toLocaleString()}</td></tr>`;
-                }
+                html += '</tbody></table></div>';
             }
         } else if (data.archives && data.archives.error) {
-            html += `<tr><td>Archives</td><td style="color:var(--danger)">${data.archives.error}</td></tr>`;
+            html += `<div style="color:var(--danger);padding:8px">${data.archives.error}</div>`;
         }
 
         // OrbitDB section
         if (data.orbitdb && !data.orbitdb.error) {
             const ob = data.orbitdb;
-            html += '<tr><td colspan="2" style="font-weight:600;padding-top:12px">OrbitDB</td></tr>';
+            html += '<table class="stats-table" style="margin-top:16px"><tbody>';
+            html += '<tr><td colspan="2" style="font-weight:600">OrbitDB</td></tr>';
             if (ob.blocks != null) {
                 html += `<tr><td>Blockstore blocks</td><td>${Number(ob.blocks).toLocaleString()}</td></tr>`;
             }
@@ -11472,11 +11497,11 @@ class Respiro {
             if (ob.pending_failures != null && ob.pending_failures > 0) {
                 html += `<tr><td>Pending failures</td><td style="color:var(--warning)">${ob.pending_failures}</td></tr>`;
             }
+            html += '</tbody></table>';
         } else if (data.orbitdb && data.orbitdb.error) {
-            html += `<tr><td>OrbitDB</td><td style="color:var(--danger)">${data.orbitdb.error}</td></tr>`;
+            html += `<div style="color:var(--danger);padding:8px">${data.orbitdb.error}</div>`;
         }
 
-        html += '</tbody></table>';
         el.innerHTML = html;
     }
 

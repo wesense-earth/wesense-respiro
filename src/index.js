@@ -1747,80 +1747,98 @@ if (ARCHIVE_REPLICATOR_URL) {
 app.get('/api/stats/storage', async (req, res) => {
     const storage = {};
 
-    // ClickHouse table sizes
+    // ClickHouse table sizes — requires SELECT on system.parts (granted in 00-create-app-user.sh).
+    // Falls back to count-only queries if the grant is missing.
     try {
         if (clickHouseClient.connected) {
+            // Try system.parts first for disk size info
+            let diskStats = null;
+            try {
+                const diskResult = await clickHouseClient.query({
+                    query: `SELECT
+                        database,
+                        table,
+                        sum(bytes_on_disk) as bytes,
+                        sum(rows) as rows
+                    FROM system.parts
+                    WHERE active
+                    GROUP BY database, table
+                    ORDER BY sum(bytes_on_disk) DESC`,
+                    format: 'JSONEachRow'
+                });
+                diskStats = await diskResult.json();
+            } catch {
+                // No access to system.parts — fall back below
+            }
+
+            // Sensor readings summary
             const sensorResult = await clickHouseClient.query({
                 query: `SELECT
-                    formatReadableSize(sum(bytes_on_disk)) as size,
-                    sum(bytes_on_disk) as bytes,
-                    sum(rows) as rows
-                FROM system.parts
-                WHERE active AND database = 'wesense' AND table = 'sensor_readings'`,
+                    count() as rows,
+                    min(timestamp) as earliest,
+                    max(timestamp) as latest,
+                    uniq(device_id) as devices,
+                    uniq(geo_country) as countries,
+                    uniq(geo_country, geo_subdivision) as regions
+                FROM wesense.sensor_readings`,
                 format: 'JSONEachRow'
             });
             const sensorRows = await sensorResult.json();
             const sensor = sensorRows[0] || {};
 
-            const systemResult = await clickHouseClient.query({
+            // Reading type breakdown
+            const typeResult = await clickHouseClient.query({
                 query: `SELECT
-                    table,
-                    formatReadableSize(sum(bytes_on_disk)) as size,
-                    sum(bytes_on_disk) as bytes,
-                    sum(rows) as rows
-                FROM system.parts
-                WHERE active AND database = 'system'
-                GROUP BY table
-                ORDER BY sum(bytes_on_disk) DESC`,
+                    reading_type,
+                    count() as rows,
+                    uniq(device_id) as devices
+                FROM wesense.sensor_readings
+                GROUP BY reading_type
+                ORDER BY count() DESC`,
                 format: 'JSONEachRow'
             });
-            const systemRows = await systemResult.json();
+            const typeRows = await typeResult.json();
 
-            const systemTotalBytes = systemRows.reduce((sum, r) => sum + Number(r.bytes || 0), 0);
+            // Compute disk sizes from system.parts if available
+            let sensorDiskSize = null;
+            let systemLogsDiskSize = null;
+            let totalDiskSize = null;
+            if (diskStats) {
+                const sensorParts = diskStats.filter(r => r.database === 'wesense' && r.table === 'sensor_readings');
+                const sensorBytes = sensorParts.reduce((s, r) => s + Number(r.bytes || 0), 0);
+                sensorDiskSize = sensorBytes > 0 ? formatBytes(sensorBytes) : null;
 
-            const allDbResult = await clickHouseClient.query({
-                query: `SELECT
-                    database,
-                    formatReadableSize(sum(bytes_on_disk)) as size,
-                    sum(bytes_on_disk) as bytes
-                FROM system.parts
-                WHERE active
-                GROUP BY database
-                ORDER BY sum(bytes_on_disk) DESC`,
-                format: 'JSONEachRow'
-            });
-            const allDbRows = await allDbResult.json();
-            const totalBytes = allDbRows.reduce((sum, r) => sum + Number(r.bytes || 0), 0);
+                const systemParts = diskStats.filter(r => r.database === 'system');
+                const systemBytes = systemParts.reduce((s, r) => s + Number(r.bytes || 0), 0);
+                systemLogsDiskSize = systemBytes > 0 ? formatBytes(systemBytes) : null;
+
+                const totalBytes = diskStats.reduce((s, r) => s + Number(r.bytes || 0), 0);
+                totalDiskSize = totalBytes > 0 ? formatBytes(totalBytes) : null;
+            }
 
             storage.clickhouse = {
                 sensor_readings: {
-                    size: sensor.size || '0 B',
-                    bytes: Number(sensor.bytes || 0),
-                    rows: Number(sensor.rows || 0)
+                    rows: Number(sensor.rows || 0),
+                    disk_size: sensorDiskSize,
+                    devices: Number(sensor.devices || 0),
+                    countries: Number(sensor.countries || 0),
+                    regions: Number(sensor.regions || 0),
+                    earliest: sensor.earliest || null,
+                    latest: sensor.latest || null
                 },
-                system_logs: {
-                    size: formatBytes(systemTotalBytes),
-                    bytes: systemTotalBytes,
-                    tables: systemRows.map(r => ({
-                        table: r.table,
-                        size: r.size,
-                        bytes: Number(r.bytes || 0),
-                        rows: Number(r.rows || 0)
-                    }))
-                },
-                databases: allDbRows.map(r => ({
-                    database: r.database,
-                    size: r.size,
-                    bytes: Number(r.bytes || 0)
-                })),
-                total: {
-                    size: formatBytes(totalBytes),
-                    bytes: totalBytes
-                }
+                system_logs_size: systemLogsDiskSize,
+                total_disk_size: totalDiskSize,
+                by_reading_type: typeRows.map(r => ({
+                    type: r.reading_type,
+                    rows: Number(r.rows || 0),
+                    devices: Number(r.devices || 0)
+                }))
             };
         }
     } catch (err) {
-        storage.clickhouse = { error: err.message };
+        // Never expose raw error messages — they may contain credentials
+        console.error('Storage stats ClickHouse error:', err.message);
+        storage.clickhouse = { error: 'ClickHouse query failed' };
     }
 
     // Archive replicator — blob count and path index summary
@@ -1861,7 +1879,8 @@ app.get('/api/stats/storage', async (req, res) => {
                     .map(([country, count]) => ({ country, archives: count }));
             }
         } catch (err) {
-            storage.archives = { error: err.message };
+            console.error('Storage stats archive error:', err.message);
+            storage.archives = { error: 'Archive query failed' };
         }
     }
 
@@ -1890,7 +1909,8 @@ app.get('/api/stats/storage', async (req, res) => {
                 storage.orbitdb.pending_failures = blData.pendingFailures || 0;
             }
         } catch (err) {
-            storage.orbitdb = { error: err.message };
+            console.error('Storage stats OrbitDB error:', err.message);
+            storage.orbitdb = { error: 'OrbitDB query failed' };
         }
     }
 
