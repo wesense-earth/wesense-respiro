@@ -1852,32 +1852,10 @@ app.get('/api/stats/storage', async (req, res) => {
 
             // Extract storage-relevant fields from the replicator status
             storage.archives = {
-                total_blobs: data.total_blobs || data.blob_count || null,
+                total_blobs: data.blob_count || null,
                 total_size: data.total_size || null,
-                total_size_bytes: data.total_size_bytes || null,
-                scope: data.store_scope || null,
-                path_index_entries: data.path_index_entries || data.path_count || null
+                scope: data.guardian_scope ? data.guardian_scope.join(', ') : null
             };
-
-            // Try to get country breakdown from path index
-            const pathIndexUrl = new URL('/path-index', ARCHIVE_REPLICATOR_URL);
-            const pathResponse = await fetch(pathIndexUrl.toString(), {
-                signal: AbortSignal.timeout(10000)
-            });
-            if (pathResponse.ok) {
-                const pathIndex = await pathResponse.json();
-                const countries = {};
-                for (const path of Object.keys(pathIndex)) {
-                    const country = path.split('/')[0];
-                    if (country) {
-                        countries[country] = (countries[country] || 0) + 1;
-                    }
-                }
-                // Sort by count descending
-                storage.archives.by_country = Object.entries(countries)
-                    .sort((a, b) => b[1] - a[1])
-                    .map(([country, count]) => ({ country, archives: count }));
-            }
         } catch (err) {
             console.error('Storage stats archive error:', err.message);
             storage.archives = { error: 'Archive query failed' };

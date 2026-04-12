@@ -11411,14 +11411,6 @@ class Respiro {
             return;
         }
 
-        // ISO 3166-1 country code to name lookup
-        const countryName = (code) => {
-            try {
-                const name = new Intl.DisplayNames(['en'], { type: 'region' }).of(code.toUpperCase());
-                return name || code.toUpperCase();
-            } catch { return code.toUpperCase(); }
-        };
-
         let html = '';
 
         // ClickHouse section
@@ -11457,28 +11449,16 @@ class Respiro {
             const ar = data.archives;
             html += '<table class="stats-table" style="margin-top:16px"><tbody>';
             html += '<tr><td colspan="2" style="font-weight:600">Archives (Parquet)</td></tr>';
-            if (ar.path_index_entries != null) {
-                html += `<tr><td>Total archives</td><td>${Number(ar.path_index_entries).toLocaleString()} archives${ar.total_size ? ' (' + ar.total_size + ')' : ''}</td></tr>`;
-            } else if (ar.total_size) {
+            if (ar.total_blobs != null) {
+                html += `<tr><td>Total archives</td><td>${Number(ar.total_blobs).toLocaleString()} files${ar.total_size ? ' (' + ar.total_size + ')' : ''}</td></tr>`;
+            }
+            if (ar.total_size && ar.total_blobs == null) {
                 html += `<tr><td>Total size</td><td>${ar.total_size}</td></tr>`;
             }
             if (ar.scope) {
                 html += `<tr><td>Storage scope</td><td><code>${ar.scope}</code></td></tr>`;
             }
             html += '</tbody></table>';
-            if (ar.by_country && ar.by_country.length > 0) {
-                const totalArchives = ar.by_country.reduce((s, c) => s + c.archives, 0);
-                html += `<div style="font-weight:500;padding:8px 0 4px">Archives by country (${ar.by_country.length} countries, ${Number(totalArchives).toLocaleString()} total)</div>`;
-                html += '<input type="text" placeholder="Search countries..." style="width:100%;padding:6px 8px;margin-bottom:4px;border:1px solid var(--border-color);border-radius:4px;background:var(--bg-color);color:var(--text-color);font-size:0.85rem" oninput="this.nextElementSibling.querySelectorAll(\'tr[data-country]\').forEach(r=>{r.style.display=r.dataset.country.toLowerCase().includes(this.value.toLowerCase())||r.dataset.code.toLowerCase().includes(this.value.toLowerCase())?\'\':\' none\'})"/>';
-                html += '<div style="max-height:300px;overflow-y:auto;border:1px solid var(--border-color);border-radius:4px">';
-                html += '<table class="stats-table" style="margin:0"><tbody>';
-                html += '<tr style="position:sticky;top:0;background:var(--bg-secondary);font-weight:500"><td>Country</td><td>Archives</td></tr>';
-                for (const c of ar.by_country) {
-                    const name = countryName(c.country);
-                    html += `<tr data-country="${name}" data-code="${c.country}"><td>${name} <span style="color:var(--text-muted)">(${c.country.toUpperCase()})</span></td><td>${Number(c.archives).toLocaleString()} archives</td></tr>`;
-                }
-                html += '</tbody></table></div>';
-            }
         } else if (data.archives && data.archives.error) {
             html += `<div style="color:var(--danger);padding:8px">${data.archives.error}</div>`;
         }
