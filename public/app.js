@@ -11433,12 +11433,6 @@ class Respiro {
             if (ch.total_disk_size) {
                 html += `<tr><td style="font-weight:500">Total disk usage</td><td style="font-weight:500">${ch.total_disk_size}</td></tr>`;
             }
-            if (ch.by_reading_type && ch.by_reading_type.length > 0) {
-                html += '<tr><td colspan="2" style="padding-top:8px;font-weight:500">By reading type</td></tr>';
-                for (const t of ch.by_reading_type) {
-                    html += `<tr><td style="padding-left:16px">${t.type}</td><td>${Number(t.rows).toLocaleString()} readings (${t.devices} devices)</td></tr>`;
-                }
-            }
             html += '</tbody></table>';
         } else if (data.clickhouse && data.clickhouse.error) {
             html += `<div style="color:var(--danger);padding:8px">${data.clickhouse.error}</div>`;

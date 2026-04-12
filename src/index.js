@@ -1786,19 +1786,6 @@ app.get('/api/stats/storage', async (req, res) => {
             const sensorRows = await sensorResult.json();
             const sensor = sensorRows[0] || {};
 
-            // Reading type breakdown
-            const typeResult = await clickHouseClient.query({
-                query: `SELECT
-                    reading_type,
-                    count() as rows,
-                    uniq(device_id) as devices
-                FROM wesense.sensor_readings
-                GROUP BY reading_type
-                ORDER BY count() DESC`,
-                format: 'JSONEachRow'
-            });
-            const typeRows = await typeResult.json();
-
             // Compute disk sizes from system.parts if available
             let sensorDiskSize = null;
             let systemLogsDiskSize = null;
@@ -1827,12 +1814,7 @@ app.get('/api/stats/storage', async (req, res) => {
                     latest: sensor.latest || null
                 },
                 system_logs_size: systemLogsDiskSize,
-                total_disk_size: totalDiskSize,
-                by_reading_type: typeRows.map(r => ({
-                    type: r.reading_type,
-                    rows: Number(r.rows || 0),
-                    devices: Number(r.devices || 0)
-                }))
+                total_disk_size: totalDiskSize
             };
         }
     } catch (err) {
