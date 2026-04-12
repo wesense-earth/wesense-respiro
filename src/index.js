@@ -1743,6 +1743,167 @@ if (ARCHIVE_REPLICATOR_URL) {
     app.get('/api/stats/iroh', (req, res) => res.json({ status: 'not_configured' }));
 }
 
+// Storage stats — disk usage across ClickHouse, archive replicator, OrbitDB
+app.get('/api/stats/storage', async (req, res) => {
+    const storage = {};
+
+    // ClickHouse table sizes
+    try {
+        if (clickHouseClient.connected) {
+            const sensorResult = await clickHouseClient.query({
+                query: `SELECT
+                    formatReadableSize(sum(bytes_on_disk)) as size,
+                    sum(bytes_on_disk) as bytes,
+                    sum(rows) as rows
+                FROM system.parts
+                WHERE active AND database = 'wesense' AND table = 'sensor_readings'`,
+                format: 'JSONEachRow'
+            });
+            const sensorRows = await sensorResult.json();
+            const sensor = sensorRows[0] || {};
+
+            const systemResult = await clickHouseClient.query({
+                query: `SELECT
+                    table,
+                    formatReadableSize(sum(bytes_on_disk)) as size,
+                    sum(bytes_on_disk) as bytes,
+                    sum(rows) as rows
+                FROM system.parts
+                WHERE active AND database = 'system'
+                GROUP BY table
+                ORDER BY sum(bytes_on_disk) DESC`,
+                format: 'JSONEachRow'
+            });
+            const systemRows = await systemResult.json();
+
+            const systemTotalBytes = systemRows.reduce((sum, r) => sum + Number(r.bytes || 0), 0);
+
+            const allDbResult = await clickHouseClient.query({
+                query: `SELECT
+                    database,
+                    formatReadableSize(sum(bytes_on_disk)) as size,
+                    sum(bytes_on_disk) as bytes
+                FROM system.parts
+                WHERE active
+                GROUP BY database
+                ORDER BY sum(bytes_on_disk) DESC`,
+                format: 'JSONEachRow'
+            });
+            const allDbRows = await allDbResult.json();
+            const totalBytes = allDbRows.reduce((sum, r) => sum + Number(r.bytes || 0), 0);
+
+            storage.clickhouse = {
+                sensor_readings: {
+                    size: sensor.size || '0 B',
+                    bytes: Number(sensor.bytes || 0),
+                    rows: Number(sensor.rows || 0)
+                },
+                system_logs: {
+                    size: formatBytes(systemTotalBytes),
+                    bytes: systemTotalBytes,
+                    tables: systemRows.map(r => ({
+                        table: r.table,
+                        size: r.size,
+                        bytes: Number(r.bytes || 0),
+                        rows: Number(r.rows || 0)
+                    }))
+                },
+                databases: allDbRows.map(r => ({
+                    database: r.database,
+                    size: r.size,
+                    bytes: Number(r.bytes || 0)
+                })),
+                total: {
+                    size: formatBytes(totalBytes),
+                    bytes: totalBytes
+                }
+            };
+        }
+    } catch (err) {
+        storage.clickhouse = { error: err.message };
+    }
+
+    // Archive replicator — blob count and path index summary
+    if (ARCHIVE_REPLICATOR_URL) {
+        try {
+            const statusUrl = new URL('/status', ARCHIVE_REPLICATOR_URL);
+            const response = await fetch(statusUrl.toString(), {
+                signal: AbortSignal.timeout(10000)
+            });
+            const data = await response.json();
+
+            // Extract storage-relevant fields from the replicator status
+            storage.archives = {
+                total_blobs: data.total_blobs || data.blob_count || null,
+                total_size: data.total_size || null,
+                total_size_bytes: data.total_size_bytes || null,
+                scope: data.store_scope || null,
+                path_index_entries: data.path_index_entries || data.path_count || null
+            };
+
+            // Try to get country breakdown from path index
+            const pathIndexUrl = new URL('/path-index', ARCHIVE_REPLICATOR_URL);
+            const pathResponse = await fetch(pathIndexUrl.toString(), {
+                signal: AbortSignal.timeout(10000)
+            });
+            if (pathResponse.ok) {
+                const pathIndex = await pathResponse.json();
+                const countries = {};
+                for (const path of Object.keys(pathIndex)) {
+                    const country = path.split('/')[0];
+                    if (country) {
+                        countries[country] = (countries[country] || 0) + 1;
+                    }
+                }
+                // Sort by count descending
+                storage.archives.by_country = Object.entries(countries)
+                    .sort((a, b) => b[1] - a[1])
+                    .map(([country, count]) => ({ country, archives: count }));
+            }
+        } catch (err) {
+            storage.archives = { error: err.message };
+        }
+    }
+
+    // OrbitDB blockstore size
+    if (ORBITDB_URL) {
+        try {
+            const healthUrl = new URL('/health', ORBITDB_URL);
+            const response = await fetch(healthUrl.toString(), {
+                signal: AbortSignal.timeout(10000)
+            });
+            const data = await response.json();
+
+            storage.orbitdb = {
+                blocks: data.blocks || data.blockstore_blocks || null,
+                peers: data.peers || null
+            };
+
+            // Get blacklist stats
+            const blacklistUrl = new URL('/blacklist', ORBITDB_URL);
+            const blResponse = await fetch(blacklistUrl.toString(), {
+                signal: AbortSignal.timeout(5000)
+            });
+            if (blResponse.ok) {
+                const blData = await blResponse.json();
+                storage.orbitdb.blacklisted_blocks = blData.blacklisted || 0;
+                storage.orbitdb.pending_failures = blData.pendingFailures || 0;
+            }
+        } catch (err) {
+            storage.orbitdb = { error: err.message };
+        }
+    }
+
+    res.json(storage);
+});
+
+function formatBytes(bytes) {
+    if (bytes === 0) return '0 B';
+    const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    return (bytes / Math.pow(1024, i)).toFixed(2) + ' ' + units[i];
+}
+
 // Live Transport stats proxy (gated on LIVE_TRANSPORT_URL env var)
 const LIVE_TRANSPORT_URL = tlsUpgrade(process.env.LIVE_TRANSPORT_URL);
 if (LIVE_TRANSPORT_URL) {

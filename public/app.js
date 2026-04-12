@@ -11006,12 +11006,13 @@ class Respiro {
 
         // Accumulated results — render progressively as fetches complete.
         // Preserve previous results so values don't flicker to empty between refreshes.
-        if (!this._statsCache) this._statsCache = { ov: {}, ob: {}, ze: {}, no: {}, tr: {}, co: {}, ct: {}, ar: {}, nw: {}, ku: {}, ir: {}, st: {}, rp: {}, zb: {}, arch: {} };
+        if (!this._statsCache) this._statsCache = { ov: {}, ob: {}, ze: {}, no: {}, tr: {}, co: {}, ct: {}, ar: {}, nw: {}, ku: {}, ir: {}, st: {}, rp: {}, zb: {}, arch: {}, stor: {} };
         const r = this._statsCache;
         const renderAll = () => {
             this.renderUserStats(r.ov, r.ob, r.ze, r.no, r.ir, r.zb);
             this.renderContribution(r.co, r.no);
             this.renderContainerStats(r.ct);
+            this.renderStorageStats(r.stor);
             this.renderArchiveStats(r.arch);
             this.renderDebugStats(r.ob, r.ze, r.no, r.tr, r.ov, r.nw, r.ir, r.rp, r.zb);
         };
@@ -11037,6 +11038,7 @@ class Respiro {
             load('/api/stats/replication', 'rp'),
             load('/api/stats/zenoh-bridge', 'zb'),
             load('/api/stats/archive', 'arch'),
+            load('/api/stats/storage', 'stor'),
         ]);
 
         all.finally(() => {
@@ -11399,6 +11401,83 @@ class Respiro {
                 </tbody>
             </table>
         `;
+    }
+
+    renderStorageStats(data) {
+        const el = document.getElementById('statsStorage');
+        if (!el) return;
+        if (!data || Object.keys(data).length === 0) {
+            el.innerHTML = '<div class="stats-empty">No storage data available</div>';
+            return;
+        }
+
+        let html = '<table class="stats-table"><tbody>';
+
+        // ClickHouse section
+        if (data.clickhouse && !data.clickhouse.error) {
+            const ch = data.clickhouse;
+            html += '<tr><td colspan="2" style="font-weight:600;padding-top:8px">ClickHouse</td></tr>';
+            if (ch.sensor_readings) {
+                html += `<tr><td>Sensor readings</td><td>${ch.sensor_readings.size} (${Number(ch.sensor_readings.rows).toLocaleString()} rows)</td></tr>`;
+            }
+            if (ch.system_logs) {
+                html += `<tr><td>System logs</td><td>${ch.system_logs.size}</td></tr>`;
+            }
+            if (ch.total) {
+                html += `<tr><td>Total ClickHouse</td><td style="font-weight:600">${ch.total.size}</td></tr>`;
+            }
+        } else if (data.clickhouse && data.clickhouse.error) {
+            html += `<tr><td>ClickHouse</td><td style="color:var(--danger)">${data.clickhouse.error}</td></tr>`;
+        }
+
+        // Archives section
+        if (data.archives && !data.archives.error) {
+            const ar = data.archives;
+            html += '<tr><td colspan="2" style="font-weight:600;padding-top:12px">Archives (Parquet)</td></tr>';
+            if (ar.path_index_entries != null) {
+                html += `<tr><td>Total archives</td><td>${Number(ar.path_index_entries).toLocaleString()}</td></tr>`;
+            }
+            if (ar.total_size) {
+                html += `<tr><td>Total size</td><td>${ar.total_size}</td></tr>`;
+            }
+            if (ar.scope) {
+                html += `<tr><td>Storage scope</td><td><code>${ar.scope}</code></td></tr>`;
+            }
+            if (ar.by_country && ar.by_country.length > 0) {
+                const top10 = ar.by_country.slice(0, 10);
+                const rest = ar.by_country.slice(10);
+                const restCount = rest.reduce((s, c) => s + c.archives, 0);
+                html += '<tr><td colspan="2" style="padding-top:8px;font-weight:500">Archives by country</td></tr>';
+                for (const c of top10) {
+                    html += `<tr><td style="padding-left:16px">${c.country.toUpperCase()}</td><td>${Number(c.archives).toLocaleString()}</td></tr>`;
+                }
+                if (rest.length > 0) {
+                    html += `<tr><td style="padding-left:16px;color:var(--text-muted)">${rest.length} other countries</td><td style="color:var(--text-muted)">${Number(restCount).toLocaleString()}</td></tr>`;
+                }
+            }
+        } else if (data.archives && data.archives.error) {
+            html += `<tr><td>Archives</td><td style="color:var(--danger)">${data.archives.error}</td></tr>`;
+        }
+
+        // OrbitDB section
+        if (data.orbitdb && !data.orbitdb.error) {
+            const ob = data.orbitdb;
+            html += '<tr><td colspan="2" style="font-weight:600;padding-top:12px">OrbitDB</td></tr>';
+            if (ob.blocks != null) {
+                html += `<tr><td>Blockstore blocks</td><td>${Number(ob.blocks).toLocaleString()}</td></tr>`;
+            }
+            if (ob.blacklisted_blocks != null) {
+                html += `<tr><td>Blacklisted blocks</td><td>${ob.blacklisted_blocks}</td></tr>`;
+            }
+            if (ob.pending_failures != null && ob.pending_failures > 0) {
+                html += `<tr><td>Pending failures</td><td style="color:var(--warning)">${ob.pending_failures}</td></tr>`;
+            }
+        } else if (data.orbitdb && data.orbitdb.error) {
+            html += `<tr><td>OrbitDB</td><td style="color:var(--danger)">${data.orbitdb.error}</td></tr>`;
+        }
+
+        html += '</tbody></table>';
+        el.innerHTML = html;
     }
 
     renderArchiveStats(data) {
