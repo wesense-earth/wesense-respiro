@@ -11552,9 +11552,9 @@ class Respiro {
                     <div class="archive-summary-value">${this.formatLargeNumber(totalBlobs)}</div>
                     <div class="archive-summary-label">Blobs</div>
                 </div>
-                <div class="archive-summary-item">
+                <div class="archive-summary-item" title="30-minute windows missing in the last 24 hours (48 expected per region)">
                     <div class="archive-summary-value">${totalGaps === 0 ? '0' : totalGaps}</div>
-                    <div class="archive-summary-label">Gaps</div>
+                    <div class="archive-summary-label">24h Gaps</div>
                 </div>
                 <div class="archive-summary-item">
                     <div class="archive-summary-value">${lastCycle ? this.getTimeAgo(lastCycle) : '--'}</div>
@@ -11602,14 +11602,16 @@ class Respiro {
                             <th data-sort="days">Days${arrow('days')}</th>
                             <th data-sort="earliest">Earliest${arrow('earliest')}</th>
                             <th data-sort="latest">Latest${arrow('latest')}</th>
-                            <th data-sort="gaps">Gaps${arrow('gaps')}</th>
+                            <th data-sort="gaps" title="30-minute windows missing in the last 24 hours (48 expected). Green = full coverage.">24h Gaps${arrow('gaps')}</th>
                         </tr>
                     </thead>
                     <tbody>
                         ${sorted.map(r => {
                             const gapCount = r.gaps?.length || 0;
                             const gapClass = gapCount === 0 ? 'no-gaps' : 'has-gaps';
-                            const gapTitle = gapCount > 0 ? `Missing: ${r.gaps.slice(0, 5).join(', ')}${gapCount > 5 ? ` +${gapCount - 5} more` : ''}` : 'No gaps';
+                            const gapTitle = gapCount > 0
+                                ? `Missing ${gapCount}/48 30-min windows in last 24h: ${r.gaps.slice(0, 5).join(', ')}${gapCount > 5 ? ` +${gapCount - 5} more` : ''}`
+                                : 'Full coverage — reading in every 30-min window in last 24h';
                             return `<tr>
                                 <td>${this.statsEscapeHtml(r.country)}/${this.statsEscapeHtml(r.subdivision)}</td>
                                 <td>${r.day_count}</td>
