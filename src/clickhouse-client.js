@@ -72,6 +72,7 @@ class ClickHouseClient {
                     device_id,
                     reading_type,
                     argMax(value, timestamp) as latest_value,
+                    argMax(reading_type_name, timestamp) as reading_type_name,
                     max(timestamp) as latest_timestamp,
                     argMax(latitude, timestamp) as latitude,
                     argMax(longitude, timestamp) as longitude,
@@ -143,6 +144,7 @@ class ClickHouseClient {
                     value: row.latest_value,
                     timestamp: this._toISOString(row.latest_timestamp),
                     unit: row.unit || this._getDefaultUnit(row.reading_type),
+                    reading_type_name: row.reading_type_name || '',
                     sensor_model: row.sensor_model
                 };
             }

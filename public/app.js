@@ -9732,6 +9732,19 @@ class Respiro {
             const data = await response.json();
             this.sensors = data.sensors || [];
             this.swarmStats = data.swarm_stats || null;  // Store swarm statistics
+
+            // Populate the reading_type_name cache from the DB so that
+            // formatReadingType() can use canonical display names set by
+            // ingesters (no hardcoded labels).
+            for (const sensor of this.sensors) {
+                if (sensor.readings) {
+                    for (const [type, reading] of Object.entries(sensor.readings)) {
+                        if (reading && reading.reading_type_name) {
+                            this.recordReadingTypeName(type, reading.reading_type_name);
+                        }
+                    }
+                }
+            }
             this.updateSourceFilters();
             this.updateBoardFilters();
             this.updateLocationFilters();
@@ -11204,39 +11217,26 @@ class Respiro {
         `;
     }
 
+    // Reading type display name lookup, populated from the database.
+    // Ingesters set reading_type_name via the core library's READING_TYPES
+    // registry (wesense-ingester-core/wesense_ingester/reading_types.py).
+    // This cache is filled by collectReadingTypeNames() as sensor data arrives.
+    readingTypeNameCache = {};
+
+    // Record a reading_type → reading_type_name mapping from DB results.
+    // Called by sensor data handlers when they receive readings that include
+    // reading_type_name (from the ClickHouse column).
+    recordReadingTypeName(readingType, readingTypeName) {
+        if (readingType && readingTypeName) {
+            this.readingTypeNameCache[readingType] = readingTypeName;
+        }
+    }
+
     formatReadingType(type) {
-        const labels = {
-            'temperature': 'Temperature',
-            'temperature_5m': 'Temperature (5m)',
-            'temperature_6m': 'Temperature (6m)',
-            'humidity': 'Humidity',
-            'pressure': 'Pressure',
-            'co2': 'CO\u2082',
-            'pm1_0': 'PM1.0',
-            'pm2_5': 'PM2.5',
-            'pm10': 'PM10',
-            'voc_index': 'VOC Index',
-            'voc_raw': 'VOC Raw',
-            'nox_index': 'NOx Index',
-            'nox_raw': 'NOx Raw',
-            'no': 'NO',
-            'no2': 'NO\u2082',
-            'so2': 'SO\u2082',
-            'light_level': 'Light Level',
-            'wind_speed': 'Wind Speed',
-            'wind_direction': 'Wind Direction',
-            'wind_gust': 'Wind Gust',
-            'wind_gust_direction': 'Wind Gust Direction',
-            'rainfall': 'Rainfall',
-            'particles_0_3um': 'Particles (>0.3\u00b5m)',
-            'particles_0_5um': 'Particles (>0.5\u00b5m)',
-            'particles_1_0um': 'Particles (>1.0\u00b5m)',
-            'particles_2_5um': 'Particles (>2.5\u00b5m)',
-            'particles_5_0um': 'Particles (>5.0\u00b5m)',
-            'particles_10um': 'Particles (>10\u00b5m)',
-            'unknown': 'Unknown',
-        };
-        return labels[type] || type.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        // Prefer the display name set by the ingester (from the canonical registry)
+        // and cached from database queries. Fall back to the raw reading_type
+        // string if we haven't seen a display name yet — no hardcoded labels.
+        return this.readingTypeNameCache[type] || type;
     }
 
     coverageBarColor(pct) {
