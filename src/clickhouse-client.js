@@ -1,4 +1,6 @@
 const { createClient } = require('@clickhouse/client');
+const fs = require('fs');
+const https = require('https');
 
 class ClickHouseClient {
     constructor() {
@@ -9,18 +11,32 @@ class ClickHouseClient {
     async connect({ quiet = false } = {}) {
         try {
             const host = process.env.CLICKHOUSE_HOST || 'localhost';
-            const port = process.env.CLICKHOUSE_PORT || '8123';
+            const tlsEnabled = process.env.TLS_ENABLED === 'true';
+            const port = tlsEnabled ? '8443' : (process.env.CLICKHOUSE_PORT || '8123');
+            const protocol = tlsEnabled ? 'https' : 'http';
             const database = process.env.CLICKHOUSE_DATABASE || 'wesense';
             const username = process.env.CLICKHOUSE_USERNAME || 'wesense';
             const password = process.env.CLICKHOUSE_PASSWORD || '';
 
-            this.client = createClient({
-                url: `http://${host}:${port}`,
+            const clientOpts = {
+                url: `${protocol}://${host}:${port}`,
                 database,
                 username,
                 password,
                 request_timeout: 300000,  // 5 minutes for background precomputation queries
-            });
+            };
+
+            // Trust deployment CA for self-signed certs
+            if (tlsEnabled) {
+                const caFile = process.env.TLS_CA_CERTFILE;
+                if (caFile && fs.existsSync(caFile)) {
+                    clientOpts.tls = {
+                        ca_cert: fs.readFileSync(caFile),
+                    };
+                }
+            }
+
+            this.client = createClient(clientOpts);
 
             // Test connection
             const result = await this.client.query({ query: 'SELECT 1' });
@@ -56,6 +72,7 @@ class ClickHouseClient {
                     device_id,
                     reading_type,
                     argMax(value, timestamp) as latest_value,
+                    argMax(reading_type_name, timestamp) as reading_type_name,
                     max(timestamp) as latest_timestamp,
                     argMax(latitude, timestamp) as latitude,
                     argMax(longitude, timestamp) as longitude,
@@ -63,11 +80,8 @@ class ClickHouseClient {
                     argMax(geo_subdivision, timestamp) as geo_subdivision,
                     argMax(node_name, timestamp) as node_name,
                     argMax(board_model, timestamp) as board_model,
-                    IF(
-                        countIf(data_source = 'MESHTASTIC_COMMUNITY') > 0,
-                        'MESHTASTIC_COMMUNITY',
-                        argMax(data_source, timestamp)
-                    ) as data_source,
+                    argMax(data_source, timestamp) as data_source,
+                    argMax(data_source_name, timestamp) as data_source_name,
                     argMax(sensor_model, timestamp) as sensor_model,
                     argMax(unit, timestamp) as unit,
                     argMax(deployment_location, timestamp) as deployment_location,
@@ -130,6 +144,7 @@ class ClickHouseClient {
                     value: row.latest_value,
                     timestamp: this._toISOString(row.latest_timestamp),
                     unit: row.unit || this._getDefaultUnit(row.reading_type),
+                    reading_type_name: row.reading_type_name || '',
                     sensor_model: row.sensor_model
                 };
             }
@@ -950,6 +965,16 @@ class ClickHouseClient {
         return timestamp;
     }
 
+    _statsRangeToInterval(range) {
+        const map = { '1h': 'INTERVAL 1 HOUR', '24h': 'INTERVAL 24 HOUR', '7d': 'INTERVAL 7 DAY', 'all': 'INTERVAL 100 YEAR' };
+        return map[range] || map['1h'];
+    }
+
+    _statsRangeToMinutes(range) {
+        const map = { '1h': 60, '24h': 1440, '7d': 10080 };
+        return map[range] || map['1h'];
+    }
+
     /**
      * Direct query method for RegionService and other services
      * @param {Object} options - Query options { query, query_params, format }
@@ -1106,23 +1131,37 @@ class ClickHouseClient {
      * Query network-wide statistics for the Stats tab
      * Single efficient query using countDistinctIf for all metrics
      */
-    async queryNetworkStats() {
+    async queryNetworkStats(range = '1h') {
         if (!this.connected || !this.client) {
             return null;
         }
 
         try {
-            const query = `
+            const interval = this._statsRangeToInterval(range);
+            const isAll = range === 'all';
+            const intervalMinutes = isAll ? null : this._statsRangeToMinutes(range);
+
+            const query = isAll ? `
                 SELECT
                     uniqExact(device_id) as total_devices,
-                    uniqExactIf(device_id, timestamp > now() - INTERVAL 1 HOUR) as active_devices_1h,
-                    uniqExactIf(device_id, timestamp > now() - INTERVAL 24 HOUR) as active_devices_24h,
-                    countIf(timestamp > now() - INTERVAL 1 HOUR) as readings_last_1h,
-                    countIf(timestamp > now() - INTERVAL 24 HOUR) as readings_last_24h,
-                    round(countIf(timestamp > now() - INTERVAL 1 HOUR) / 60.0, 1) as readings_per_minute,
+                    uniqExact(device_id) as active_devices,
+                    count() as readings_in_range,
+                    round(count() / (dateDiff('minute', min(timestamp), now()) + 1.0), 1) as readings_per_minute,
                     uniqExactIf(geo_country, geo_country != '') as countries,
                     uniqExactIf(concat(geo_country, '-', geo_subdivision), geo_country != '' AND geo_subdivision != '') as regions,
-                    uniqExactIf(reading_type, timestamp > now() - INTERVAL 24 HOUR) as reading_types_active,
+                    uniqExact(reading_type) as reading_types_active,
+                    max(timestamp) as latest_reading,
+                    count() as total_readings_all_time
+                FROM sensor_readings
+            ` : `
+                SELECT
+                    uniqExact(device_id) as total_devices,
+                    uniqExactIf(device_id, timestamp > now() - ${interval}) as active_devices,
+                    countIf(timestamp > now() - ${interval}) as readings_in_range,
+                    round(countIf(timestamp > now() - ${interval}) / ${intervalMinutes}.0, 1) as readings_per_minute,
+                    uniqExactIf(geo_country, geo_country != '') as countries,
+                    uniqExactIf(concat(geo_country, '-', geo_subdivision), geo_country != '' AND geo_subdivision != '') as regions,
+                    uniqExactIf(reading_type, timestamp > now() - ${interval}) as reading_types_active,
                     max(timestamp) as latest_reading,
                     count() as total_readings_all_time
                 FROM sensor_readings
@@ -1131,10 +1170,11 @@ class ClickHouseClient {
             const sourceQuery = `
                 SELECT
                     data_source,
+                    argMax(data_source_name, timestamp) as data_source_name,
                     uniqExact(device_id) as device_count
                 FROM sensor_readings
-                WHERE timestamp > now() - INTERVAL 24 HOUR
-                  AND data_source != ''
+                ${isAll ? '' : `WHERE timestamp > now() - ${interval}`}
+                ${isAll ? 'WHERE' : 'AND'} data_source != ''
                 GROUP BY data_source
                 ORDER BY device_count DESC
             `;
@@ -1152,15 +1192,17 @@ class ClickHouseClient {
             const row = statsRows[0];
             const dataSources = {};
             for (const src of sourceRows) {
-                dataSources[src.data_source] = parseInt(src.device_count);
+                dataSources[src.data_source] = {
+                    devices: parseInt(src.device_count),
+                    name: src.data_source_name || src.data_source,
+                };
             }
 
             return {
+                range,
                 total_devices: parseInt(row.total_devices),
-                active_devices_1h: parseInt(row.active_devices_1h),
-                active_devices_24h: parseInt(row.active_devices_24h),
-                readings_last_1h: parseInt(row.readings_last_1h),
-                readings_last_24h: parseInt(row.readings_last_24h),
+                active_devices: parseInt(row.active_devices),
+                readings_in_range: parseInt(row.readings_in_range),
                 readings_per_minute: parseFloat(row.readings_per_minute),
                 data_sources: dataSources,
                 coverage: {
@@ -1182,20 +1224,23 @@ class ClickHouseClient {
      * Query contribution breakdown: local ingesters vs P2P data
      * Groups by received_via and data_source
      */
-    async queryContribution() {
+    async queryContribution(range = '1h') {
         if (!this.connected || !this.client) {
             return null;
         }
 
         try {
+            const interval = this._statsRangeToInterval(range);
+            const isAll = range === 'all';
             const query = `
                 SELECT
                     received_via,
                     data_source,
+                    argMax(data_source_name, timestamp) as data_source_name,
                     uniqExact(device_id) as device_count,
                     count() as reading_count
                 FROM sensor_readings
-                WHERE timestamp > now() - INTERVAL 24 HOUR
+                ${isAll ? '' : `WHERE timestamp > now() - ${interval}`}
                 GROUP BY received_via, data_source
                 ORDER BY received_via, device_count DESC
             `;
@@ -1203,12 +1248,16 @@ class ClickHouseClient {
             const result = await this.client.query({ query, format: 'JSONEachRow' });
             const rows = await result.json();
 
-            const contribution = { local: {}, p2p: {} };
+            const contribution = {
+                local: {},
+                p2p: {}
+            };
             for (const row of rows) {
                 const via = row.received_via === 'p2p' ? 'p2p' : 'local';
                 contribution[via][row.data_source] = {
                     devices: parseInt(row.device_count),
-                    readings: parseInt(row.reading_count)
+                    readings: parseInt(row.reading_count),
+                    name: row.data_source_name || row.data_source,
                 };
             }
 
@@ -1216,6 +1265,96 @@ class ClickHouseClient {
 
         } catch (error) {
             console.error('Failed to query contribution:', error.message);
+            return null;
+        }
+    }
+
+    /**
+     * Query contribution breakdown by reading type for My Contribution / P2P cards
+     * Returns per-reading-type device count, reading count, and time coverage percentage
+     */
+    async queryContributionByType(range = '1h') {
+        if (!this.connected || !this.client) {
+            return null;
+        }
+
+        try {
+            const interval = this._statsRangeToInterval(range);
+            const isAll = range === 'all';
+
+            // Slot size and total slots vary by range for coverage calculation
+            // For 'all': use 1-day slots, compute total from earliest reading
+            const slotConfig = {
+                '1h':  { slot: 'INTERVAL 5 MINUTE',  totalSlots: 12 },
+                '24h': { slot: 'INTERVAL 15 MINUTE', totalSlots: 96 },
+                '7d':  { slot: 'INTERVAL 1 HOUR',    totalSlots: 168 },
+                'all': { slot: 'INTERVAL 1 DAY',     totalSlots: null }
+            };
+            const { slot } = slotConfig[range] || slotConfig['1h'];
+            let { totalSlots } = slotConfig[range] || slotConfig['1h'];
+
+            // For 'all', we need to compute totalSlots from the data
+            if (isAll) {
+                const spanQuery = `SELECT dateDiff('day', min(timestamp), now()) + 1 as total_days FROM sensor_readings`;
+                const spanResult = await this.client.query({ query: spanQuery, format: 'JSONEachRow' });
+                const spanRows = await spanResult.json();
+                totalSlots = spanRows.length > 0 ? parseInt(spanRows[0].total_days) || 1 : 1;
+            }
+
+            // Query A: per-reading-type coverage for local and p2p
+            const typeQuery = `
+                SELECT
+                    received_via,
+                    reading_type,
+                    uniqExact(device_id) as device_count,
+                    count() as reading_count,
+                    uniqExact(toStartOfInterval(timestamp, ${slot})) as active_slots
+                FROM sensor_readings
+                ${isAll ? '' : `WHERE timestamp > now() - ${interval}`}
+                GROUP BY received_via, reading_type
+                ORDER BY received_via, reading_count DESC
+            `;
+
+            // Query B: all-time known reading types (for showing missing types)
+            const allTypesQuery = `
+                SELECT DISTINCT reading_type FROM sensor_readings
+            `;
+
+            const [typeResult, allTypesResult] = await Promise.all([
+                this.client.query({ query: typeQuery, format: 'JSONEachRow' }),
+                this.client.query({ query: allTypesQuery, format: 'JSONEachRow' })
+            ]);
+
+            const typeRows = await typeResult.json();
+            const allTypesRows = await allTypesResult.json();
+
+            // Canonical reading types — union with all-time DB types
+            const canonicalTypes = [
+                'temperature', 'humidity', 'pressure', 'co2',
+                'pm1_0', 'pm2_5', 'pm10',
+                'voc_index', 'nox_index',
+            ];
+            const dbTypes = allTypesRows.map(r => r.reading_type).filter(Boolean);
+            const allReadingTypes = [...new Set([...canonicalTypes, ...dbTypes])];
+
+            const byType = { local: {}, p2p: {} };
+            for (const row of typeRows) {
+                const via = row.received_via === 'p2p' ? 'p2p' : 'local';
+                const coveragePct = Math.min(100, Math.round((parseInt(row.active_slots) / totalSlots) * 100));
+                byType[via][row.reading_type] = {
+                    devices: parseInt(row.device_count),
+                    readings: parseInt(row.reading_count),
+                    coverage_pct: coveragePct
+                };
+            }
+
+            return {
+                by_type: byType,
+                all_reading_types: allReadingTypes
+            };
+
+        } catch (error) {
+            console.error('Failed to query contribution by type:', error.message);
             return null;
         }
     }

@@ -1,12 +1,17 @@
 // Data-source-aware freshness thresholds
 // WESENSE sensors report every 5 minutes, Meshtastic sensors report every 30-60 minutes
 const FRESHNESS_THRESHOLDS = {
-    'WESENSE': 10 * 60 * 1000,              // 10 minutes
-    'CHIRPSTACK': 10 * 60 * 1000,           // 10 minutes (self-hosted LoRaWAN via ChirpStack)
-    'TTN': 10 * 60 * 1000,                  // 10 minutes (same hardware as WiFi, via LoRaWAN)
-    'MESHTASTIC_PUBLIC': 61 * 60 * 1000,    // 61 minutes (catches 60-min reporters)
-    'MESHTASTIC_COMMUNITY': 61 * 60 * 1000, // 61 minutes
-    'MESHTASTIC_DOWNLINK': 61 * 60 * 1000,  // 61 minutes
+    'wesense': 10 * 60 * 1000,              // 10 minutes
+    'meshtastic': 61 * 60 * 1000,           // 61 minutes (catches 60-min reporters)
+    'home_assistant': 10 * 60 * 1000,       // 10 minutes
+    'ecan': 15 * 60 * 1000,                 // 15 minutes (10-min reporting interval)
+    'tasman': 15 * 60 * 1000,
+    'nelson': 15 * 60 * 1000,
+    'marlborough': 15 * 60 * 1000,
+    'hawkesbay': 15 * 60 * 1000,
+    'gisborne': 15 * 60 * 1000,
+    'horizons': 15 * 60 * 1000,
+    'westcoast': 15 * 60 * 1000,
     'default': 10 * 60 * 1000               // Conservative default
 };
 
@@ -5131,7 +5136,7 @@ class NewDashboardLayout {
         const deviceList = this.outdoorDeviceIds.join(',');
         const metrics = ['temperature', 'humidity', 'pressure'];
         // Use longest threshold for aggregate data (may include Meshtastic sensors)
-        const aggregateFreshnessThreshold = FRESHNESS_THRESHOLDS['MESHTASTIC_PUBLIC'];
+        const aggregateFreshnessThreshold = FRESHNESS_THRESHOLDS['meshtastic'];
         const now = Date.now();
 
         try {
@@ -7678,8 +7683,6 @@ class Respiro {
 
     // Region Overlay implementation per architecture doc Section 6.2
     async enableRegionView() {
-        console.log('Enabling region view (architecture Section 6.2)...');
-
         // Hide marker clusters when region view is active
         if (this.markerCluster) {
             this.map.removeLayer(this.markerCluster);
@@ -7687,12 +7690,6 @@ class Respiro {
 
         // Load data FIRST, before creating layer, so colors are ready
         await this.refreshRegionData();
-
-        console.log('Region data loaded before layer creation:', {
-            dataCount: Object.keys(this.regionalData || {}).length,
-            sampleKeys: Object.keys(this.regionalData || {}).slice(0, 3),
-            zoom: this.map.getZoom()
-        });
 
         // Create PMTiles boundary layer with dynamic coloring (data is now ready)
         this.createPMTilesLayer();
@@ -7848,7 +7845,7 @@ class Respiro {
                                     const name = dev.node_name || deviceId;
                                     const shortId = deviceId.length > 12 ? deviceId.slice(-8) : deviceId;
                                     const displayName = name !== deviceId ? name : shortId;
-                                    const hwInfo = `${dev.board_model || 'Unknown'} / ${dev.sensor_model || 'Unknown'}`;
+                                    const hwInfo = `${this.formatBoardModel(dev.board_model)} / ${dev.sensor_model || 'Unknown'}`;
                                     return `<tr>
                                         <td style="padding: 2px 0; font-size: 12px;" title="${deviceId}">${displayName}<br><span style="color: #999; font-size: 10px;">${hwInfo}</span></td>
                                         <td style="padding: 2px 0; text-align: right; font-size: 12px; vertical-align: top;">${dev.avg_value.toFixed(1)}${unitParam}</td>
@@ -7906,32 +7903,41 @@ class Respiro {
     }
 
     createPMTilesLayer() {
-        // Check required libraries
         if (typeof protomapsL === 'undefined') {
             console.error('protomaps-leaflet not loaded! Check script tags in index.html');
             return;
         }
-        if (typeof pmtiles === 'undefined') {
-            console.warn('pmtiles library not loaded separately - protomaps-leaflet bundles it');
-        }
-
-        console.log('Creating PMTiles layer...');
 
         const self = this;
 
         try {
             // Dynamic fill function that colors regions based on sensor data
+            // Must catch errors — an unhandled throw inside the fill function
+            // silently aborts protomaps-leaflet's entire tile render
             const dynamicFill = (zoom, feature) => {
-                return self.getRegionColor(feature);
+                try {
+                    const color = self.getRegionColor(feature);
+                    const rid = feature?.props?.region_id || '';
+                    if (rid.includes('NZL')) {
+                        console.log(`[FILL] z=${zoom} layer=${feature?.layerName} id=${rid} color=${color} dataKeys=${Object.keys(self.regionalData||{}).length}`);
+                    }
+                    return color;
+                } catch (err) {
+                    console.error('Error in region fill:', err);
+                    return 'rgba(180, 180, 180, 0.4)';
+                }
             };
 
             // Multi-layer config with dynamic colors
             const layerConfig = {
-                url: '/regions.pmtiles',
+                url: '/api/tiles/{z}/{x}/{y}.mvt?v=1',
                 pane: 'regionPane',
                 maxNativeZoom: 10,  // PMTiles has tiles up to zoom 10
                 maxZoom: 19,        // Allow overzooming up to zoom 19
                 paint_rules: [
+                    // protomaps-leaflet zoom checks are INCLUSIVE:
+                    //   minzoom: zoom >= minzoom to render
+                    //   maxzoom: zoom <= maxzoom to render
                     // ADM0 (countries) at zoom 0-1
                     {
                         dataLayer: 'adm0',
@@ -7942,7 +7948,7 @@ class Respiro {
                         }),
                         maxzoom: 1
                     },
-                    // ADM1 (states/regions) at zoom 2-4
+                    // ADM1 (states/regions) at zoom 2-6
                     {
                         dataLayer: 'adm1',
                         symbolizer: new protomapsL.PolygonSymbolizer({
@@ -7951,9 +7957,9 @@ class Respiro {
                             width: 1.5
                         }),
                         minzoom: 2,
-                        maxzoom: 4
+                        maxzoom: 6
                     },
-                    // ADM2 (districts) at zoom 5-7
+                    // ADM2 (districts) at zoom 7-9
                     {
                         dataLayer: 'adm2',
                         symbolizer: new protomapsL.PolygonSymbolizer({
@@ -7961,10 +7967,10 @@ class Respiro {
                             stroke: '#555',
                             width: 1
                         }),
-                        minzoom: 5,
-                        maxzoom: 7
+                        minzoom: 7,
+                        maxzoom: 9
                     },
-                    // ADM3 (sub-districts) at zoom 8+ (will overzoom beyond tile maxzoom)
+                    // ADM3 (sub-districts) at zoom 10-12
                     {
                         dataLayer: 'adm3',
                         symbolizer: new protomapsL.PolygonSymbolizer({
@@ -7972,7 +7978,18 @@ class Respiro {
                             stroke: '#666',
                             width: 0.8
                         }),
-                        minzoom: 8
+                        minzoom: 10,
+                        maxzoom: 12
+                    },
+                    // ADM4 (localities) at zoom 11+
+                    {
+                        dataLayer: 'adm4',
+                        symbolizer: new protomapsL.PolygonSymbolizer({
+                            fill: dynamicFill,
+                            stroke: '#777',
+                            width: 0.5
+                        }),
+                        minzoom: 11
                     }
                 ],
                 label_rules: []
@@ -7980,11 +7997,9 @@ class Respiro {
 
             this.regionLayer = protomapsL.leafletLayer(layerConfig);
             this.regionLayer.addTo(this.map);
-            console.log('PMTiles region layer added to map');
 
         } catch (err) {
             console.error('Error creating PMTiles layer:', err);
-            console.error('  Stack:', err.stack);
         }
     }
 
@@ -7995,8 +8010,8 @@ class Respiro {
 
         // Build request key - zoom, metric, deployment filter, and time settings
         // Map zoom to admin level for cache key (matches server logic)
-        // Zoom 0-1: ADM0, Zoom 2-4: ADM1, Zoom 5-7: ADM2, Zoom 8+: ADM3
-        const adminLevel = zoom <= 1 ? 0 : zoom <= 4 ? 1 : zoom <= 7 ? 2 : 3;
+        // Zoom 0-1: ADM0, Zoom 2-6: ADM1, Zoom 7-9: ADM2, Zoom 10-12: ADM3, Zoom 13+: ADM4
+        const adminLevel = zoom <= 1 ? 0 : zoom <= 6 ? 1 : zoom <= 9 ? 2 : zoom <= 12 ? 3 : 4;
         const deploymentTypes = Array.from(this.regionDeploymentTypes).sort().join(',');
 
         // Include time parameters in request key
@@ -8043,31 +8058,11 @@ class Respiro {
 
             console.log(`Loaded ${Object.keys(this.regionalData).length} regions for ${this.regionMetric} (ADM${data.admin_level})`);
 
-            // Force layer redraw using rerenderTiles()
-            // protomaps-leaflet caches rendered Canvas tiles, so we need to force a re-render
+            // Force layer redraw — remove and re-add to ensure tiles re-render
+            // with fresh data. rerenderTiles() doesn't reliably redraw with ZXY source.
             if (this.regionLayer) {
-                // Debug: log available methods once
-                if (!this._loggedLayerMethods) {
-                    console.log('RegionLayer methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(this.regionLayer)));
-                    this._loggedLayerMethods = true;
-                }
-
-                // Clear debug caches so we log features on next render
-                this._debuggedFeatures = new Set();
-                this._matchedRegions = new Set();
-                this._fillDebugCount = 0;
-                this._colorDebugCount = 0;
-
-                // Use rerenderTiles() to redraw all visible tiles with new data
-                if (this.regionLayer.rerenderTiles) {
-                    console.log('Calling rerenderTiles() to update colors...');
-                    this.regionLayer.rerenderTiles();
-                } else {
-                    // Fallback: remove and re-add layer to force re-render
-                    console.log('rerenderTiles not available, removing and re-adding layer...');
-                    this.map.removeLayer(this.regionLayer);
-                    this.regionLayer.addTo(this.map);
-                }
+                this.map.removeLayer(this.regionLayer);
+                this.regionLayer.addTo(this.map);
             }
 
             // Update legend
@@ -8090,30 +8085,6 @@ class Respiro {
 
         const props = feature?.props || {};
         const regionId = props.region_id || '';
-        const layerName = feature?.layerName || 'unknown';
-
-        // Debug: Log data availability
-        if (!this._colorDebugCount) this._colorDebugCount = 0;
-        if (this._colorDebugCount < 3) {
-            console.log('getRegionColor state:', {
-                hasRegionalData: !!this.regionalData,
-                regionDataKeys: Object.keys(this.regionalData || {}).length,
-                regionId,
-                match: !!(this.regionalData && this.regionalData[regionId])
-            });
-            this._colorDebugCount++;
-        }
-
-        // Debug: log first few features to understand what we're getting
-        if (!this._debuggedFeatures) {
-            this._debuggedFeatures = new Set();
-        }
-        if (this._debuggedFeatures.size < 5 && regionId && !this._debuggedFeatures.has(regionId)) {
-            this._debuggedFeatures.add(regionId);
-            console.log(`Feature from layer ${layerName}: region_id=${regionId}, props:`, props);
-            console.log(`  Available data keys (first 5):`, Object.keys(this.regionalData || {}).slice(0, 5));
-            console.log(`  Match found:`, !!(this.regionalData && this.regionalData[regionId]));
-        }
 
         // No data loaded yet - show gray
         if (!this.regionalData || Object.keys(this.regionalData).length === 0) {
@@ -8123,14 +8094,7 @@ class Respiro {
         // Direct region_id match (both PMTiles and server use same format)
         if (regionId && this.regionalData[regionId]) {
             const value = this.regionalData[regionId].avg;
-            const color = this.getColorForRegionMetric(this.regionMetric, value);
-            // Log matches (limited to avoid spam)
-            if (!this._matchedRegions) this._matchedRegions = new Set();
-            if (!this._matchedRegions.has(regionId)) {
-                this._matchedRegions.add(regionId);
-                console.log(`[MATCH] ${regionId} = ${value}${this.regionUnit} → ${color}`);
-            }
-            return color;
+            return this.getColorForRegionMetric(this.regionMetric, value);
         }
 
         // No match - show gray (gap in coverage = no sensor data for this region)
@@ -8951,7 +8915,7 @@ class Respiro {
                 if (sensor.deviceId.startsWith('!') || sensor.deviceId.startsWith('meshtastic_')) {
                     dataSource = 'MESHTASTIC';
                 } else if (sensor.deviceId.includes('_')) {
-                    dataSource = 'WESENSE';
+                    dataSource = 'wesense';
                 } else {
                     dataSource = 'UNKNOWN';
                 }
@@ -8989,6 +8953,7 @@ class Respiro {
 
     updateBoardFilters() {
         // Collect unique board types and count sensors for each from time-filtered sensors
+        // Uses raw board values as keys (for filtering) with friendly display names
         const boardCounts = new Map();
         const filteredSensors = this.getFilteredSensorsExcluding(['board']);
 
@@ -9007,21 +8972,24 @@ class Respiro {
         // Remove all except 'All' button
         boardFilters.querySelectorAll('.filter-btn:not([data-filter-value="all"])').forEach(btn => btn.remove());
 
-        // Sort board types - put UNKNOWN first, then alphabetically
+        // Sort by friendly display name, with Unknown first
         const sortedBoards = boardTypes.sort((a, b) => {
             if (a === 'UNKNOWN') return -1;
             if (b === 'UNKNOWN') return 1;
-            return a.localeCompare(b);
+            const nameA = this.formatBoardModel(a);
+            const nameB = this.formatBoardModel(b);
+            return nameA.localeCompare(nameB);
         });
 
-        // Add button for each unique board type with count
+        // Add button for each unique board type with count and friendly name
         sortedBoards.forEach(board => {
             const count = boardCounts.get(board);
+            const displayName = this.formatBoardModel(board);
             const btn = document.createElement('button');
             btn.className = 'filter-btn';
             btn.dataset.filterType = 'board';
             btn.dataset.filterValue = board;
-            btn.textContent = `${board} (${count})`;
+            btn.textContent = `${displayName} (${count})`;
             boardFilters.appendChild(btn);
         });
     }
@@ -9206,7 +9174,7 @@ class Respiro {
                     if (sensor.deviceId.startsWith('!') || sensor.deviceId.startsWith('meshtastic_')) {
                         dataSource = 'MESHTASTIC';
                     } else if (sensor.deviceId.includes('_')) {
-                        dataSource = 'WESENSE';
+                        dataSource = 'wesense';
                     } else {
                         dataSource = 'UNKNOWN';
                     }
@@ -9310,7 +9278,7 @@ class Respiro {
                     if (sensor.deviceId.startsWith('!') || sensor.deviceId.startsWith('meshtastic_')) {
                         dataSource = 'MESHTASTIC';
                     } else if (sensor.deviceId.includes('_')) {
-                        dataSource = 'WESENSE';
+                        dataSource = 'wesense';
                     } else {
                         dataSource = 'UNKNOWN';
                     }
@@ -9466,7 +9434,7 @@ class Respiro {
                 parseFloat(this.getMapConfig('MAP_CENTER_LNG') || '174.763')
             ];
         }
-        const zoomLevel = parseInt(this.getMapConfig('MAP_ZOOM_LEVEL') || '4');
+        const zoomLevel = parseInt(this.getMapConfig('MAP_ZOOM_LEVEL') || '3');
 
         this.map = L.map('map', {
             maxBounds: [[-90, -180], [90, 180]],
@@ -9727,8 +9695,13 @@ class Respiro {
                         button.innerHTML = gridIcon;
                     }
 
-                    // Restore map position (layer changes can sometimes shift the view)
-                    self.map.setView(currentCenter, currentZoom, { animate: false });
+                    // Restore map position — layer add/remove can shift the view.
+                    // Multiple deferred restores because MarkerCluster and protomaps-leaflet
+                    // process layer changes asynchronously at different timings.
+                    const restore = () => self.map.setView(currentCenter, currentZoom, { animate: false });
+                    restore();
+                    setTimeout(restore, 50);
+                    setTimeout(restore, 200);
 
                     button.classList.remove('loading');
                 });
@@ -9746,7 +9719,7 @@ class Respiro {
         const defaults = {
             'MAP_CENTER_LAT': '-36.848',
             'MAP_CENTER_LNG': '174.763',
-            'MAP_ZOOM_LEVEL': '10',
+            'MAP_ZOOM_LEVEL': '3',
             'MAP_LANGUAGE': 'auto',  // 'auto', 'en', or 'local'
         };
         return defaults[key];
@@ -9759,6 +9732,19 @@ class Respiro {
             const data = await response.json();
             this.sensors = data.sensors || [];
             this.swarmStats = data.swarm_stats || null;  // Store swarm statistics
+
+            // Populate the reading_type_name cache from the DB so that
+            // formatReadingType() can use canonical display names set by
+            // ingesters (no hardcoded labels).
+            for (const sensor of this.sensors) {
+                if (sensor.readings) {
+                    for (const [type, reading] of Object.entries(sensor.readings)) {
+                        if (reading && reading.reading_type_name) {
+                            this.recordReadingTypeName(type, reading.reading_type_name);
+                        }
+                    }
+                }
+            }
             this.updateSourceFilters();
             this.updateBoardFilters();
             this.updateLocationFilters();
@@ -10186,8 +10172,10 @@ class Respiro {
         if (!dataSource || !boardModel) {
             const deviceType = this.getDeviceType(sensor);
             dataSource = dataSource || deviceType.type || 'Unknown';
-            boardModel = boardModel || deviceType.board || 'Unknown';
+            boardModel = boardModel || deviceType.board || null;
         }
+        // Use friendly board name for display
+        boardModel = this.formatBoardModel(boardModel);
 
         // Format the data source for display
         const formattedSource = this.formatDataSource(dataSource) || dataSource;
@@ -10812,7 +10800,7 @@ class Respiro {
                 const raw = reading.raw;
 
                 // Prefer Meshtastic readings with board_model
-                if ((raw.data_source === 'MESHTASTIC' || raw.data_source === 'MESHTASTIC_PUBLIC' || raw.data_source === 'MESHTASTIC_COMMUNITY') && raw.board_model) {
+                if (raw.data_source === 'meshtastic' && raw.board_model) {
                     return {
                         type: this.formatDataSource(raw.data_source),
                         board: raw.board_model
@@ -10834,7 +10822,7 @@ class Respiro {
             if (reading.raw && Object.keys(reading.raw).length > 0) {
                 const raw = reading.raw;
 
-                if (raw.data_source === 'MESHTASTIC' || raw.data_source === 'MESHTASTIC_PUBLIC' || raw.data_source === 'MESHTASTIC_COMMUNITY') {
+                if (raw.data_source === 'meshtastic') {
                     return {
                         type: this.formatDataSource(raw.data_source),
                         board: null
@@ -10858,26 +10846,79 @@ class Respiro {
         return { type: null, board: null };
     }
 
-    formatDataSource(source) {
-        // Convert "MESHTASTIC" to "Meshtastic", "WESENSE" to "WeSense"
+    formatDataSource(source, dataSourceName) {
+        // Prefer data_source_name from ClickHouse if available
+        if (dataSourceName) return dataSourceName;
         if (!source) return null;
+        // Auto-format: "new_source_name" -> "New Source Name"
+        return source.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    }
+
+    formatBoardModel(board) {
+        // Convert board_model values to friendly display names.
+        // Known boards get friendly names; unknown boards get auto-formatted.
+        if (!board) return 'Unknown';
         const map = {
-            'MESHTASTIC': 'Meshtastic',
-            'MESHTASTIC_PUBLIC': 'Meshtastic Public',
-            'MESHTASTIC_COMMUNITY': 'Meshtastic Community',
-            'MESHTASTIC_DOWNLINK': 'Meshtastic Downlink',
-            'WESENSE': 'WeSense',
-            'TTN': 'WeSense TTN',
-            'CHIRPSTACK': 'WeSense ChirpStack',
-            'HOMEASSISTANT': 'Home Assistant',
-            'meshtastic-public': 'Meshtastic Public',
-            'meshtastic-community': 'Meshtastic Community',
-            'meshtastic-downlink': 'Meshtastic Downlink',
-            'ttn': 'WeSense TTN',
-            'chirpstack': 'WeSense ChirpStack',
-            'homeassistant': 'Home Assistant'
+            'UNKNOWN': 'Unknown',
+            'tbeam': 'LilyGo T-Beam',
+            'TBEAM': 'LilyGo T-Beam',
+            't-beam': 'LilyGo T-Beam',
+            'T-BEAM': 'LilyGo T-Beam',
+            'tbeam_v1.1': 'LilyGo T-Beam v1.1',
+            'tbeam_v1.2': 'LilyGo T-Beam v1.2',
+            'tlora': 'LilyGo T-LoRa',
+            'TLORA': 'LilyGo T-LoRa',
+            'tlora_v2_1_1p6': 'LilyGo T-LoRa v2.1',
+            'tlora_v2_1_1p8': 'LilyGo T-LoRa v2.1',
+            'heltec_v3': 'Heltec V3',
+            'HELTEC_V3': 'Heltec V3',
+            'heltec-v3': 'Heltec V3',
+            'heltec_v2': 'Heltec V2',
+            'heltec_wireless_tracker': 'Heltec Wireless Tracker',
+            'heltec_wireless_paper': 'Heltec Wireless Paper',
+            'rak4631': 'RAK WisBlock 4631',
+            'RAK4631': 'RAK WisBlock 4631',
+            'rak11200': 'RAK WisBlock 11200',
+            'station-g2': 'Station G2',
+            'STATION_G2': 'Station G2',
+            'nano-g2-ultra': 'Nano G2 Ultra',
+            'wio-tracker-wm1110': 'Seeed Wio Tracker WM1110',
+            'esp32-s3': 'ESP32-S3',
+            'ESP32-S3': 'ESP32-S3',
+            'esp32-c3': 'ESP32-C3',
+            'ESP32-C3': 'ESP32-C3',
+            'esp32-c6': 'ESP32-C6',
+            'ESP32-C6': 'ESP32-C6',
+            'esp32': 'ESP32',
+            'ESP32': 'ESP32',
+            'tracker-t1000-e': 'LilyGo Tracker T1000-E',
+            'pico': 'Raspberry Pi Pico',
+            'PICO': 'Raspberry Pi Pico',
+            'rp2040-lora': 'RP2040 LoRa',
         };
-        return map[source] || source;
+        if (map[board]) return map[board];
+        // Auto-format: "some_board_name" -> "Some Board Name"
+        return board.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    }
+
+    getSourceDotClass(source) {
+        // CSS class for source indicator dots. Known sources get branded colours;
+        // unknown sources get 'default' (grey). New sources appear automatically
+        // without needing CSS changes — add a named class later for branding.
+        const map = {
+            'wesense': 'wesense',
+            'meshtastic': 'meshtastic-community',
+            'home_assistant': 'homeassistant',
+            'ecan': 'govt-aq-nz',
+            'tasman': 'govt-aq-nz',
+            'nelson': 'govt-aq-nz',
+            'marlborough': 'govt-aq-nz',
+            'hawkesbay': 'govt-aq-nz',
+            'gisborne': 'govt-aq-nz',
+            'horizons': 'govt-aq-nz',
+            'westcoast': 'govt-aq-nz',
+        };
+        return map[source] || 'default';
     }
     
     drawSparklines(sensor) {
@@ -10940,6 +10981,8 @@ class Respiro {
     // =========================================================================
 
     setupStats() {
+        this.statsTimeRange = '1h';
+
         // Debug toggle
         const toggle = document.getElementById('statsDebugToggle');
         const section = document.getElementById('statsDebugSection');
@@ -10947,6 +10990,19 @@ class Respiro {
             toggle.addEventListener('click', () => {
                 toggle.classList.toggle('expanded');
                 section.classList.toggle('expanded');
+            });
+        }
+
+        // Time range pills
+        const pills = document.getElementById('statsTimePills');
+        if (pills) {
+            pills.addEventListener('click', (e) => {
+                const btn = e.target.closest('[data-stats-range]');
+                if (!btn) return;
+                this.statsTimeRange = btn.dataset.statsRange;
+                pills.querySelectorAll('.time-nav-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                this.loadStats();
             });
         }
 
@@ -10963,13 +11019,15 @@ class Respiro {
 
         // Accumulated results — render progressively as fetches complete.
         // Preserve previous results so values don't flicker to empty between refreshes.
-        if (!this._statsCache) this._statsCache = { ov: {}, ob: {}, ze: {}, no: {}, tr: {}, co: {}, ct: {}, ar: {}, nw: {}, ku: {} };
+        if (!this._statsCache) this._statsCache = { ov: {}, ob: {}, ze: {}, no: {}, tr: {}, co: {}, ct: {}, ar: {}, nw: {}, ku: {}, ir: {}, st: {}, rp: {}, zb: {}, arch: {}, stor: {} };
         const r = this._statsCache;
         const renderAll = () => {
-            this.renderUserStats(r.ov, r.ob, r.ze, r.no, r.ku);
+            this.renderUserStats(r.ov, r.ob, r.ze, r.no, r.ir, r.zb);
             this.renderContribution(r.co, r.no);
             this.renderContainerStats(r.ct);
-            this.renderDebugStats(r.ob, r.ze, r.no, r.tr, r.ov, r.ar, r.nw, r.ku);
+            this.renderStorageStats(r.stor);
+            this.renderArchiveStats(r.arch);
+            this.renderDebugStats(r.ob, r.ze, r.no, r.tr, r.ov, r.nw, r.ir, r.rp, r.zb);
         };
 
         // Helper: fetch, store result, re-render
@@ -10980,16 +11038,20 @@ class Respiro {
 
         // Fire all requests in parallel — each re-renders the page as it arrives
         const all = Promise.all([
-            load('/api/stats/overview', 'ov'),
+            load(`/api/stats/overview?range=${this.statsTimeRange || '1h'}`, 'ov'),
             load('/api/stats/orbitdb', 'ob'),
             load('/api/stats/zenoh', 'ze'),
             load('/api/stats/nodes', 'no'),
             load('/api/stats/trust', 'tr'),
-            load('/api/stats/contribution', 'co'),
+            load(`/api/stats/contribution?range=${this.statsTimeRange || '1h'}`, 'co'),
             load('/api/stats/containers', 'ct'),
-            load('/api/stats/archives', 'ar'),
             load('/api/stats/network', 'nw'),
-            load('/api/stats/kubo', 'ku'),
+            load('/api/stats/iroh', 'ir'),
+            load('/api/stats/stores', 'st'),
+            load('/api/stats/replication', 'rp'),
+            load('/api/stats/zenoh-bridge', 'zb'),
+            load('/api/stats/archive', 'arch'),
+            load('/api/stats/storage', 'stor'),
         ]);
 
         all.finally(() => {
@@ -10997,30 +11059,46 @@ class Respiro {
         });
     }
 
-    renderUserStats(overview, orbitdb, zenoh, nodesData, kubo) {
-        // Hero: P2P Peers
+    renderUserStats(overview, orbitdb, zenoh, nodesData, iroh, zenohBridge) {
+        // Hero: P2P Peers — Live (Zenoh) / Sync (OrbitDB) / Archive (Iroh)
         const peersEl = document.getElementById('statsPeers');
         const peersSubEl = document.getElementById('statsPeersSub');
+
+        // OrbitDB peer count (sync/discovery) — use peer_count (all libp2p connections)
+        // since on the private WeSense network, all connected peers are WeSense peers
+        let syncCount = '--';
         if (orbitdb && orbitdb.peer_count != null) {
-            // Use wesense_peer_count (gossipsub topic subscribers) — these are
-            // actual WeSense stations sharing OrbitDB databases, not IPFS relays.
-            const wesensePeers = orbitdb.wesense_peer_count ?? 0;
-            peersEl.textContent = wesensePeers;
-            peersSubEl.textContent = wesensePeers === 1 ? 'peer' : 'peers';
+            syncCount = String(orbitdb.peer_count);
         } else if (orbitdb && orbitdb.status === 'not_configured') {
-            peersEl.textContent = '--';
-            peersSubEl.textContent = 'not configured';
-        } else {
-            peersEl.textContent = '--';
-            peersSubEl.textContent = 'offline';
+            syncCount = '--';
         }
+
+        // Zenoh Bridge remote peer count (live data)
+        let liveCount = '--';
+        if (zenohBridge && zenohBridge.remote_peers != null) {
+            liveCount = String(zenohBridge.remote_peers);
+        } else if (zenohBridge && zenohBridge.status === 'not_configured') {
+            liveCount = '--';
+        }
+
+        // Iroh (archive replication)
+        let archiveCount = '--';
+        if (iroh && iroh.node_id) {
+            archiveCount = iroh.connected_peers != null ? String(iroh.connected_peers) : '0';
+        } else if (iroh && iroh.status === 'not_configured') {
+            archiveCount = '--';
+        }
+
+        peersEl.textContent = `${syncCount} / ${liveCount} / ${archiveCount}`;
 
         // Hero: Devices Online
         const devicesEl = document.getElementById('statsDevices');
         const devicesSubEl = document.getElementById('statsDevicesSub');
-        if (overview.active_devices_24h != null) {
-            devicesEl.textContent = this.formatLargeNumber(overview.active_devices_24h);
-            devicesSubEl.textContent = `${overview.active_devices_1h || 0} in last hour`;
+        const rangeLabels = { '1h': 'last 1 hour', '24h': 'last 24 hours', '7d': 'last 7 days', 'all': 'all time' };
+        const rangeLabel = rangeLabels[overview.range] || rangeLabels['1h'];
+        if (overview.active_devices != null) {
+            devicesEl.textContent = this.formatLargeNumber(overview.active_devices);
+            devicesSubEl.textContent = rangeLabel;
         }
 
         // Hero: Readings/min
@@ -11028,7 +11106,7 @@ class Respiro {
         const rateSubEl = document.getElementById('statsRateSub');
         if (overview.readings_per_minute != null) {
             rateEl.textContent = overview.readings_per_minute;
-            rateSubEl.textContent = `${this.formatLargeNumber(overview.readings_last_24h || 0)} in 24h`;
+            rateSubEl.textContent = `${this.formatLargeNumber(overview.readings_in_range || 0)} in ${overview.range || '1h'}`;
         }
 
         // Hero: Coverage
@@ -11039,50 +11117,35 @@ class Respiro {
             coverageSubEl.textContent = 'countries / regions';
         }
 
-        // Data Sources
-        const sourcesEl = document.getElementById('statsDataSources');
-        if (overview.data_sources && Object.keys(overview.data_sources).length > 0) {
-            const sourceNames = {
-                'WESENSE': 'WeSense WiFi',
-                'CHIRPSTACK': 'WeSense ChirpStack',
-                'MESHTASTIC_DOWNLINK': 'Meshtastic Downlink',
-                'MESHTASTIC_COMMUNITY': 'Meshtastic Community',
-                'HOMEASSISTANT': 'Home Assistant',
-                'TTN': 'WeSense TTN'
-            };
-            const sourceDotClass = {
-                'WESENSE': 'wesense',
-                'CHIRPSTACK': 'chirpstack',
-                'MESHTASTIC_DOWNLINK': 'meshtastic-public',
-                'MESHTASTIC_COMMUNITY': 'meshtastic-community',
-                'HOMEASSISTANT': 'homeassistant',
-                'TTN': 'ttn'
-            };
-            sourcesEl.innerHTML = Object.entries(overview.data_sources)
-                .map(([key, count]) => `
-                    <div class="stats-source-row">
-                        <span class="stats-source-name">
-                            <span class="source-dot ${sourceDotClass[key] || 'default'}"></span>
-                            ${sourceNames[key] || key}
-                        </span>
-                        <span class="stats-source-count">${count}</span>
-                    </div>
-                `).join('');
-        } else {
-            sourcesEl.innerHTML = '<div class="stats-empty">No data</div>';
-        }
-
-        // Health indicators
+        // Service health indicators
         this.setHealthIndicator('healthClickhouse', overview.clickhouse_connected ? 'healthy' : 'offline');
 
-        if (zenoh && zenoh.status === 'not_configured') {
-            this.setHealthIndicator('healthZenoh', 'unknown');
-        } else if (zenoh && zenoh.status) {
-            this.setHealthIndicator('healthZenoh', zenoh.status === 'healthy' || zenoh.zenoh_connected ? 'healthy' : 'degraded');
+        // EMQX — infer from whether we have real-time data
+        if (overview.active_devices > 0) {
+            this.setHealthIndicator('healthMqtt', 'healthy');
         } else {
-            this.setHealthIndicator('healthZenoh', 'offline');
+            this.setHealthIndicator('healthMqtt', 'unknown');
         }
 
+        // Storage Broker — check via archive replicator connectivity (if iroh is up, gateway is up)
+        if (iroh && iroh.node_id) {
+            this.setHealthIndicator('healthGateway', 'healthy');
+        } else if (iroh && iroh.status === 'not_configured') {
+            this.setHealthIndicator('healthGateway', 'unknown');
+        } else {
+            this.setHealthIndicator('healthGateway', 'offline');
+        }
+
+        // Archive Replicator
+        if (iroh && iroh.status === 'not_configured') {
+            this.setHealthIndicator('healthIroh', 'unknown');
+        } else if (iroh && iroh.node_id) {
+            this.setHealthIndicator('healthIroh', 'healthy');
+        } else {
+            this.setHealthIndicator('healthIroh', 'offline');
+        }
+
+        // OrbitDB
         if (orbitdb && orbitdb.status === 'not_configured') {
             this.setHealthIndicator('healthOrbitdb', 'unknown');
         } else if (orbitdb && orbitdb.peer_count != null) {
@@ -11091,21 +11154,22 @@ class Respiro {
             this.setHealthIndicator('healthOrbitdb', 'offline');
         }
 
-        if (kubo && kubo.status === 'not_configured') {
-            this.setHealthIndicator('healthKubo', 'unknown');
-        } else if (kubo && kubo.status === 'healthy') {
-            this.setHealthIndicator('healthKubo', 'healthy');
+        // Live Transport
+        if (zenohBridge && zenohBridge.status === 'not_configured') {
+            this.setHealthIndicator('healthZenoh', 'unknown');
+        } else if (zenohBridge && (zenohBridge.received != null || zenohBridge.bridge_enabled != null)) {
+            this.setHealthIndicator('healthZenoh', 'healthy');
         } else {
-            this.setHealthIndicator('healthKubo', 'offline');
+            this.setHealthIndicator('healthZenoh', 'offline');
         }
 
-        // MQTT — infer from whether we have real-time data (readings in last hour)
-        if (overview.active_devices_1h > 0) {
-            this.setHealthIndicator('healthMqtt', 'healthy');
-        } else if (overview.active_devices_24h > 0) {
-            this.setHealthIndicator('healthMqtt', 'degraded');
+        // Zenoh API
+        if (zenoh && zenoh.status === 'not_configured') {
+            this.setHealthIndicator('healthZenohApi', 'unknown');
+        } else if (zenoh && zenoh.status) {
+            this.setHealthIndicator('healthZenohApi', zenoh.status === 'healthy' || zenoh.zenoh_connected ? 'healthy' : 'degraded');
         } else {
-            this.setHealthIndicator('healthMqtt', 'unknown');
+            this.setHealthIndicator('healthZenohApi', 'offline');
         }
 
         // Coverage Details
@@ -11143,8 +11207,8 @@ class Respiro {
                 <span class="stats-detail-value">${overview.active_viewers != null ? overview.active_viewers : '--'}</span>
             </div>
             <div class="stats-detail-row">
-                <span class="stats-detail-label">Active Devices (1h)</span>
-                <span class="stats-detail-value">${overview.active_devices_1h != null ? overview.active_devices_1h : '--'}</span>
+                <span class="stats-detail-label">Active Devices (${overview.range || '1h'})</span>
+                <span class="stats-detail-value">${overview.active_devices != null ? overview.active_devices : '--'}</span>
             </div>
             <div class="stats-detail-row">
                 <span class="stats-detail-label">Total Devices</span>
@@ -11153,56 +11217,144 @@ class Respiro {
         `;
     }
 
-    renderContribution(contribution, nodes) {
-        // All expected sources — always shown, 0 if inactive
-        const allSources = [
-            { key: 'WESENSE', name: 'WeSense WiFi', dot: 'wesense' },
-            { key: 'CHIRPSTACK', name: 'WeSense ChirpStack', dot: 'chirpstack' },
-            { key: 'TTN', name: 'WeSense TTN', dot: 'ttn' },
-            { key: 'MESHTASTIC_COMMUNITY', name: 'Meshtastic Community', dot: 'meshtastic-community' },
-            { key: 'MESHTASTIC_DOWNLINK', name: 'Meshtastic Downlink', dot: 'meshtastic-public' },
-            { key: 'HOMEASSISTANT', name: 'Home Assistant', dot: 'homeassistant' },
-        ];
+    // Reading type display name lookup, populated from the database.
+    // Ingesters set reading_type_name via the core library's READING_TYPES
+    // registry (wesense-ingester-core/wesense_ingester/reading_types.py).
+    // This cache is filled by collectReadingTypeNames() as sensor data arrives.
+    readingTypeNameCache = {};
 
-        const renderSourceRows = (sources) => {
-            return allSources.map(({ key, name, dot }) => {
-                const data = sources?.[key];
-                const count = data ? data.devices : 0;
-                return `
-                    <div class="stats-source-row">
-                        <span class="stats-source-name">
-                            <span class="source-dot ${dot}"></span>
-                            ${name}
-                        </span>
-                        <span class="stats-source-count${count === 0 ? ' style="color:var(--text-muted)"' : ''}">${count} <span style="color:var(--text-muted);font-weight:400;font-size:12px">devices</span></span>
+    // Record a reading_type → reading_type_name mapping from DB results.
+    // Called by sensor data handlers when they receive readings that include
+    // reading_type_name (from the ClickHouse column).
+    recordReadingTypeName(readingType, readingTypeName) {
+        if (readingType && readingTypeName) {
+            this.readingTypeNameCache[readingType] = readingTypeName;
+        }
+    }
+
+    formatReadingType(type) {
+        // Prefer the display name set by the ingester (from the canonical registry)
+        // and cached from database queries. Fall back to the raw reading_type
+        // string if we haven't seen a display name yet — no hardcoded labels.
+        return this.readingTypeNameCache[type] || type;
+    }
+
+    coverageBarColor(pct) {
+        if (pct >= 80) return 'var(--health-healthy, #4caf50)';
+        if (pct >= 40) return 'var(--health-degraded, #ff9800)';
+        return 'var(--health-offline, #f44336)';
+    }
+
+    renderContribution(contribution, nodes) {
+        const allTypes = contribution?.all_reading_types || [];
+        const byTypeLocal = contribution?.by_type?.local || {};
+        const byTypeP2P = contribution?.by_type?.p2p || {};
+
+        // Render per-reading-type coverage rows for My Contribution / P2P
+        const renderTypeRows = (typeData) => {
+            if (allTypes.length === 0 && Object.keys(typeData).length === 0) {
+                return '<div class="stats-empty">No data</div>';
+            }
+
+            // Build full list: all canonical/known types
+            const typesToShow = allTypes.length > 0 ? allTypes : Object.keys(typeData);
+
+            // Split into active (has data) and missing
+            const active = typesToShow.filter(t => typeData[t]);
+            const missing = typesToShow.filter(t => !typeData[t]);
+
+            // Sort active by reading count desc, missing alphabetically
+            active.sort((a, b) => (typeData[b]?.readings || 0) - (typeData[a]?.readings || 0));
+            missing.sort((a, b) => this.formatReadingType(a).localeCompare(this.formatReadingType(b)));
+
+            const rows = [];
+
+            for (const type of active) {
+                const d = typeData[type];
+                const pct = d.coverage_pct;
+                const color = this.coverageBarColor(pct);
+                rows.push(`
+                    <div class="stats-type-row">
+                        <div class="stats-type-header">
+                            <span class="stats-type-name">${this.formatReadingType(type)}</span>
+                            <span class="stats-type-meta">${pct}%  &middot;  ${this.formatLargeNumber(d.readings)} readings</span>
+                        </div>
+                        <div class="stats-coverage-bar">
+                            <div class="stats-coverage-fill" style="width:${pct}%;background:${color}"></div>
+                        </div>
                     </div>
-                `;
-            }).join('');
+                `);
+            }
+
+            for (const type of missing) {
+                rows.push(`
+                    <div class="stats-type-row stats-type-missing">
+                        <div class="stats-type-header">
+                            <span class="stats-type-name">${this.formatReadingType(type)}</span>
+                            <span class="stats-type-meta">no data yet</span>
+                        </div>
+                        <div class="stats-coverage-bar">
+                            <div class="stats-coverage-fill" style="width:0%"></div>
+                        </div>
+                    </div>
+                `);
+            }
+
+            return rows.join('');
         };
 
-        // My Contribution
+        // Render per-source rows for Data Sources card
+        const renderSourceRows = (sources) => {
+            if (!sources || Object.keys(sources).length === 0) {
+                return '<div class="stats-empty">No data</div>';
+            }
+            return Object.entries(sources)
+                .sort(([a, ad], [b, bd]) => ((ad?.name || a)).localeCompare(bd?.name || b))
+                .map(([key, data]) => {
+                    const devices = data ? data.devices : 0;
+                    const readings = data ? data.readings : 0;
+                    const displayName = data?.name || this.formatDataSource(key) || key;
+                    return `
+                        <div class="stats-source-row">
+                            <span class="stats-source-name">
+                                <span class="source-dot ${this.getSourceDotClass(key)}"></span>
+                                ${displayName}
+                            </span>
+                            <span class="stats-source-count">${devices} <span style="color:var(--text-muted);font-weight:400;font-size:12px">devices</span> &middot; ${this.formatLargeNumber(readings)} <span style="color:var(--text-muted);font-weight:400;font-size:12px">readings</span></span>
+                        </div>
+                    `;
+                }).join('');
+        };
+
+        // My Contribution — per reading type with coverage bars
         const myEl = document.getElementById('statsMyContribution');
-        myEl.innerHTML = renderSourceRows(contribution?.local || {});
+        myEl.innerHTML = renderTypeRows(byTypeLocal);
 
-        // P2P Network
+        // P2P Network — same format
         const p2pEl = document.getElementById('statsP2PContribution');
-        const p2pSources = contribution?.p2p || {};
-        const nodeCount = nodes?.nodes?.length || 0;
-        const hasP2PData = Object.keys(p2pSources).length > 0;
-
+        const hasP2PData = Object.keys(byTypeP2P).length > 0;
         if (hasP2PData) {
-            p2pEl.innerHTML = renderSourceRows(p2pSources);
+            p2pEl.innerHTML = renderTypeRows(byTypeP2P);
         } else {
             p2pEl.innerHTML = '<div class="stats-empty">No P2P data yet</div>';
         }
-        if (nodeCount > 0) {
-            p2pEl.innerHTML += `
-                <div class="stats-detail-row" style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(128,128,128,0.1)">
-                    <span class="stats-detail-label">Registered Nodes</span>
-                    <span class="stats-detail-value">${nodeCount}</span>
-                </div>
-            `;
+
+        // Data Sources — per source with device + reading counts
+        const sourcesEl = document.getElementById('statsDataSources');
+        const allSources = {};
+        // Merge local and p2p sources
+        for (const [key, data] of Object.entries(contribution?.by_source?.local || {})) {
+            allSources[key] = { ...data };
         }
+        for (const [key, data] of Object.entries(contribution?.by_source?.p2p || {})) {
+            if (allSources[key]) {
+                allSources[key].devices += data.devices;
+                allSources[key].readings += data.readings;
+            } else {
+                allSources[key] = { ...data };
+            }
+        }
+        sourcesEl.innerHTML = renderSourceRows(allSources);
     }
 
     renderContainerStats(data) {
@@ -11251,6 +11403,269 @@ class Respiro {
         `;
     }
 
+    renderStorageStats(data) {
+        const el = document.getElementById('statsStorage');
+        if (!el) return;
+        if (!data || Object.keys(data).length === 0) {
+            el.innerHTML = '<div class="stats-empty">No storage data available</div>';
+            return;
+        }
+
+        let html = '';
+
+        // ClickHouse section
+        if (data.clickhouse && !data.clickhouse.error) {
+            const ch = data.clickhouse;
+            html += '<table class="stats-table"><tbody>';
+            html += '<tr><td colspan="2" style="font-weight:600">Sensor Database (ClickHouse)</td></tr>';
+            if (ch.sensor_readings) {
+                const sr = ch.sensor_readings;
+                html += `<tr><td>Total readings</td><td>${Number(sr.rows).toLocaleString()} readings${sr.disk_size ? ' (' + sr.disk_size + ')' : ''}</td></tr>`;
+                html += `<tr><td>Devices</td><td>${Number(sr.devices).toLocaleString()} devices</td></tr>`;
+                html += `<tr><td>Countries</td><td>${Number(sr.countries).toLocaleString()} countries</td></tr>`;
+                html += `<tr><td>Regions</td><td>${Number(sr.regions).toLocaleString()} regions</td></tr>`;
+                if (sr.earliest) html += `<tr><td>Earliest reading</td><td>${sr.earliest}</td></tr>`;
+                if (sr.latest) html += `<tr><td>Latest reading</td><td>${sr.latest}</td></tr>`;
+            }
+            if (ch.system_logs_size) {
+                html += `<tr><td>System logs</td><td>${ch.system_logs_size}</td></tr>`;
+            }
+            if (ch.total_disk_size) {
+                html += `<tr><td style="font-weight:500">Total disk usage</td><td style="font-weight:500">${ch.total_disk_size}</td></tr>`;
+            }
+            html += '</tbody></table>';
+        } else if (data.clickhouse && data.clickhouse.error) {
+            html += `<div style="color:var(--danger);padding:8px">${data.clickhouse.error}</div>`;
+        }
+
+        // Archives section
+        if (data.archives && !data.archives.error) {
+            const ar = data.archives;
+            html += '<table class="stats-table" style="margin-top:16px"><tbody>';
+            html += '<tr><td colspan="2" style="font-weight:600">Archives (Parquet)</td></tr>';
+            if (ar.total_blobs != null) {
+                html += `<tr><td>Total archives</td><td>${Number(ar.total_blobs).toLocaleString()} files${ar.total_size ? ' (' + ar.total_size + ')' : ''}</td></tr>`;
+            }
+            if (ar.total_size && ar.total_blobs == null) {
+                html += `<tr><td>Total size</td><td>${ar.total_size}</td></tr>`;
+            }
+            if (ar.scope) {
+                html += `<tr><td>Storage scope</td><td><code>${ar.scope}</code></td></tr>`;
+            }
+            html += '</tbody></table>';
+        } else if (data.archives && data.archives.error) {
+            html += `<div style="color:var(--danger);padding:8px">${data.archives.error}</div>`;
+        }
+
+        // OrbitDB section
+        if (data.orbitdb && !data.orbitdb.error) {
+            const ob = data.orbitdb;
+            html += '<table class="stats-table" style="margin-top:16px"><tbody>';
+            html += '<tr><td colspan="2" style="font-weight:600">OrbitDB</td></tr>';
+            if (ob.blocks != null) {
+                html += `<tr><td>Blockstore blocks</td><td>${Number(ob.blocks).toLocaleString()}</td></tr>`;
+            }
+            if (ob.blacklisted_blocks != null) {
+                html += `<tr><td>Blacklisted blocks</td><td>${ob.blacklisted_blocks}</td></tr>`;
+            }
+            if (ob.pending_failures != null && ob.pending_failures > 0) {
+                html += `<tr><td>Pending failures</td><td style="color:var(--warning)">${ob.pending_failures}</td></tr>`;
+            }
+            html += '</tbody></table>';
+        } else if (data.orbitdb && data.orbitdb.error) {
+            html += `<div style="color:var(--danger);padding:8px">${data.orbitdb.error}</div>`;
+        }
+
+        el.innerHTML = html;
+    }
+
+    renderArchiveStats(data) {
+        const el = document.getElementById('statsArchive');
+        const triggerBtn = document.getElementById('archiveTriggerBtn');
+        if (!el) return;
+
+        if (!data || data.status === 'not_configured') {
+            el.innerHTML = '<div class="stats-empty">Archive not configured (GATEWAY_URL not set)</div>';
+            if (triggerBtn) triggerBtn.style.display = 'none';
+            return;
+        }
+        if (data.error) {
+            el.innerHTML = `<div class="stats-empty">${this.statsEscapeHtml(data.error)}</div>`;
+            if (triggerBtn) triggerBtn.style.display = 'none';
+            return;
+        }
+
+        const archive = data.archive || data;
+        const regions = archive.regions || [];
+        const comparison = data.comparison || {};
+
+        // Show trigger button
+        if (triggerBtn) {
+            triggerBtn.style.display = '';
+            if (!triggerBtn._bound) {
+                triggerBtn._bound = true;
+                triggerBtn.addEventListener('click', async () => {
+                    triggerBtn.classList.add('loading');
+                    triggerBtn.disabled = true;
+                    const origText = triggerBtn.innerHTML;
+                    try {
+                        const resp = await fetch('/api/archive/trigger', { method: 'POST' });
+                        const result = await resp.json();
+                        if (!resp.ok) {
+                            alert(result.detail || 'Archive trigger failed');
+                        } else {
+                            triggerBtn.innerHTML = '&#10003; Cycle started';
+                            // Refresh stats after a short delay to show progress
+                            setTimeout(() => this.loadStats(), 10000);
+                        }
+                    } catch (e) {
+                        alert('Failed to trigger archive: ' + e.message);
+                    } finally {
+                        triggerBtn.classList.remove('loading');
+                        setTimeout(() => {
+                            triggerBtn.innerHTML = origText;
+                            triggerBtn.disabled = false;
+                        }, 5000);
+                    }
+                });
+            }
+        }
+
+        // Summary bar
+        const totalRegions = archive.total_regions || regions.length;
+        const totalDays = archive.total_days || 0;
+        const totalBlobs = archive.total_blobs || 0;
+        const lastCycle = archive.last_archive_cycle;
+        const totalGaps = regions.reduce((sum, r) => sum + (r.gaps?.length || 0), 0);
+
+        let summaryHtml = `
+            <div class="archive-summary">
+                <div class="archive-summary-item">
+                    <div class="archive-summary-value">${totalRegions}</div>
+                    <div class="archive-summary-label">Regions</div>
+                </div>
+                <div class="archive-summary-item">
+                    <div class="archive-summary-value">${this.formatLargeNumber(totalDays)}</div>
+                    <div class="archive-summary-label">Day-files</div>
+                </div>
+                <div class="archive-summary-item">
+                    <div class="archive-summary-value">${this.formatLargeNumber(totalBlobs)}</div>
+                    <div class="archive-summary-label">Blobs</div>
+                </div>
+                <div class="archive-summary-item" title="30-minute windows missing in the last 24 hours (48 expected per region)">
+                    <div class="archive-summary-value">${totalGaps === 0 ? '0' : totalGaps}</div>
+                    <div class="archive-summary-label">24h Gaps</div>
+                </div>
+                <div class="archive-summary-item">
+                    <div class="archive-summary-value">${lastCycle ? this.getTimeAgo(lastCycle) : '--'}</div>
+                    <div class="archive-summary-label">Last Cycle</div>
+                </div>
+            </div>
+        `;
+
+        // Region table
+        if (regions.length > 0) {
+            // Sort by country then subdivision
+            if (!this._archiveSort) this._archiveSort = { col: 'region', asc: true };
+            const sort = this._archiveSort;
+
+            const sorted = [...regions].sort((a, b) => {
+                let cmp = 0;
+                switch (sort.col) {
+                    case 'region':
+                        cmp = (`${a.country}/${a.subdivision}`).localeCompare(`${b.country}/${b.subdivision}`);
+                        break;
+                    case 'days':
+                        cmp = (a.day_count || 0) - (b.day_count || 0);
+                        break;
+                    case 'earliest':
+                        cmp = (a.earliest || '').localeCompare(b.earliest || '');
+                        break;
+                    case 'latest':
+                        cmp = (a.latest || '').localeCompare(b.latest || '');
+                        break;
+                    case 'gaps':
+                        cmp = (a.gaps?.length || 0) - (b.gaps?.length || 0);
+                        break;
+                }
+                return sort.asc ? cmp : -cmp;
+            });
+
+            const arrow = (col) => sort.col === col ? `<span class="sort-arrow">${sort.asc ? '▲' : '▼'}</span>` : '';
+
+            summaryHtml += `
+                <div class="archive-region-wrapper">
+                <table class="archive-region-table" id="archiveRegionTable">
+                    <thead>
+                        <tr>
+                            <th data-sort="region">Region${arrow('region')}</th>
+                            <th data-sort="days">Days${arrow('days')}</th>
+                            <th data-sort="earliest">Earliest${arrow('earliest')}</th>
+                            <th data-sort="latest">Latest${arrow('latest')}</th>
+                            <th data-sort="gaps" title="30-minute windows missing in the last 24 hours (48 expected). Green = full coverage.">24h Gaps${arrow('gaps')}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${sorted.map(r => {
+                            const gapCount = r.gaps?.length || 0;
+                            const gapClass = gapCount === 0 ? 'no-gaps' : 'has-gaps';
+                            const gapTitle = gapCount > 0
+                                ? `Missing ${gapCount}/48 30-min windows in last 24h: ${r.gaps.slice(0, 5).join(', ')}${gapCount > 5 ? ` +${gapCount - 5} more` : ''}`
+                                : 'Full coverage — reading in every 30-min window in last 24h';
+                            return `<tr>
+                                <td>${this.statsEscapeHtml(r.country)}/${this.statsEscapeHtml(r.subdivision)}</td>
+                                <td>${r.day_count}</td>
+                                <td>${this.statsEscapeHtml(r.earliest || '--')}</td>
+                                <td>${this.statsEscapeHtml(r.latest || '--')}</td>
+                                <td>${gapCount}<span class="archive-gap-indicator ${gapClass}" title="${this.statsEscapeHtml(gapTitle)}"></span></td>
+                            </tr>`;
+                        }).join('')}
+                    </tbody>
+                </table>
+                </div>
+            `;
+        }
+
+        // Comparison bar (archived vs total in ClickHouse)
+        if (comparison.total_readings) {
+            const archivable = comparison.archivable_readings || 0;
+            const pct = archivable > 0 ? Math.round((totalDays / (comparison.total_days || 1)) * 100) : 0;
+            summaryHtml += `
+                <div class="archive-comparison">
+                    <div style="display:flex;justify-content:space-between;margin-bottom:2px">
+                        <span>Archive coverage</span>
+                        <span>${totalDays} / ${comparison.total_days || '--'} day-regions (${Math.min(pct, 100)}%)</span>
+                    </div>
+                    <div class="bar-track">
+                        <div class="bar-fill" style="width:${Math.min(pct, 100)}%"></div>
+                    </div>
+                    <div style="margin-top:4px;font-size:11px">
+                        ${this.formatLargeNumber(comparison.total_readings)} total readings | ${this.formatLargeNumber(archivable)} archivable
+                        ${comparison.date_range ? ` | ${comparison.date_range}` : ''}
+                    </div>
+                </div>
+            `;
+        }
+
+        el.innerHTML = summaryHtml;
+
+        // Attach sort handlers
+        const table = document.getElementById('archiveRegionTable');
+        if (table) {
+            table.querySelectorAll('th[data-sort]').forEach(th => {
+                th.addEventListener('click', () => {
+                    const col = th.dataset.sort;
+                    if (this._archiveSort.col === col) {
+                        this._archiveSort.asc = !this._archiveSort.asc;
+                    } else {
+                        this._archiveSort = { col, asc: true };
+                    }
+                    this.renderArchiveStats(data);
+                });
+            });
+        }
+    }
+
     formatBytes(bytes) {
         if (bytes == null || isNaN(bytes)) return '0 B';
         bytes = Number(bytes);
@@ -11261,7 +11676,7 @@ class Respiro {
         return `${val < 10 ? val.toFixed(1) : Math.round(val)} ${units[i]}`;
     }
 
-    renderDebugStats(orbitdb, zenoh, nodes, trust, overview, archives, network, kubo) {
+    renderDebugStats(orbitdb, zenoh, nodes, trust, overview, network, iroh, replication, zenohBridge) {
         // P2P Network
         const p2pEl = document.getElementById('debugP2P');
         if (orbitdb && orbitdb.peer_count != null) {
@@ -11353,65 +11768,6 @@ class Respiro {
             portsEl.innerHTML = '<div class="stats-empty">No checks configured</div>';
         }
 
-        // Kubo IPFS
-        const kuboEl = document.getElementById('debugKubo');
-        if (kubo && kubo.status === 'healthy') {
-            const repoSize = kubo.repo_size || 0;
-            const repoSizeStr = repoSize > 0 ? this.formatBytes(repoSize) : '--';
-            kuboEl.innerHTML = `
-                ${kubo.peer_id ? `<div class="stats-mono-row stats-mono">Peer ID: ${this.statsEscapeHtml(kubo.peer_id)}</div>` : ''}
-                <div class="stats-mono-row stats-mono">Swarm Peers: ${kubo.peer_count}</div>
-                <div class="stats-mono-row stats-mono">Repo Size: ${repoSizeStr} (${(kubo.num_objects || 0).toLocaleString()} objects)</div>
-                ${kubo.agent_version ? `<div class="stats-mono-row stats-mono">Agent: ${this.statsEscapeHtml(kubo.agent_version)}</div>` : ''}
-            `;
-        } else if (kubo && kubo.status === 'not_configured') {
-            kuboEl.innerHTML = '<div class="stats-empty">Not configured</div>';
-        } else {
-            kuboEl.innerHTML = '<div class="stats-empty">Not connected</div>';
-        }
-
-        // IPFS Archives
-        const ipfsEl = document.getElementById('debugIPFS');
-        if (archives && archives.root_cid) {
-            const rootCid = archives.root_cid;
-            const ipnsName = archives.ipns?.name;
-            const gateway = archives.gateway_url || 'https://dweb.link';
-            const gatewayUrl = `${gateway}/ipfs/${rootCid}`;
-            let rows = `
-                <div class="stats-detail-row">
-                    <span class="stats-detail-label">Root CID</span>
-                    <span class="stats-detail-value stats-mono"><a href="${gatewayUrl}" target="_blank" rel="noopener">${this.statsEscapeHtml(rootCid)}</a></span>
-                </div>
-            `;
-            if (ipnsName) {
-                const ipnsUrl = `${gateway}/ipns/${ipnsName}`;
-                rows += `
-                    <div class="stats-detail-row">
-                        <span class="stats-detail-label">IPNS Name</span>
-                        <span class="stats-detail-value stats-mono"><a href="${ipnsUrl}" target="_blank" rel="noopener">${this.statsEscapeHtml(ipnsName)}</a></span>
-                    </div>
-                `;
-            } else {
-                rows += `
-                    <div class="stats-detail-row">
-                        <span class="stats-detail-label">IPNS Name</span>
-                        <span class="stats-detail-value" style="color:var(--text-muted)">Not published</span>
-                    </div>
-                `;
-            }
-            rows += `
-                <div class="stats-detail-row">
-                    <span class="stats-detail-label">Public Gateway</span>
-                    <span class="stats-detail-value"><a href="${gatewayUrl}" target="_blank" rel="noopener">${this.statsEscapeHtml(gatewayUrl)}</a></span>
-                </div>
-            `;
-            ipfsEl.innerHTML = rows;
-        } else if (archives && archives.status === 'not_configured') {
-            ipfsEl.innerHTML = '<div class="stats-empty">Kubo IPFS not configured</div>';
-        } else {
-            ipfsEl.innerHTML = '<div class="stats-empty">No archives</div>';
-        }
-
         // Background Tasks
         const tasksEl = document.getElementById('debugTasks');
         if (overview.precompute_status) {
@@ -11428,6 +11784,70 @@ class Respiro {
             `;
         } else {
             tasksEl.innerHTML = '<div class="stats-empty">No data</div>';
+        }
+
+        // Iroh Sidecar
+        const irohEl = document.getElementById('debugIroh');
+        if (irohEl) {
+            if (iroh && iroh.node_id) {
+                const relayHtml = iroh.relay_urls && iroh.relay_urls.length > 0
+                    ? `<div class="stats-mono-row stats-mono">Relays: ${iroh.relay_urls.map(u => this.statsEscapeHtml(u)).join(', ')}</div>`
+                    : '';
+                const repl = iroh.replication || {};
+                irohEl.innerHTML = `
+                    <div class="stats-mono-row stats-mono">Node ID: ${this.statsEscapeHtml(iroh.node_id)}</div>
+                    <div class="stats-mono-row stats-mono">Guardian Scope: ${(iroh.guardian_scope || []).map(s => this.statsEscapeHtml(s)).join(', ') || 'none (announce-only)'}</div>
+                    <div class="stats-mono-row stats-mono">Blobs: ${iroh.blob_count ?? 0}</div>
+                    ${relayHtml}
+                    <div class="stats-mono-row stats-mono">Replicated: ${repl.replicated ?? 0} | Skipped: ${(repl.skipped_existing ?? 0) + (repl.skipped_scope ?? 0)} | Failed: ${repl.failed ?? 0}</div>
+                    ${repl.last_replicated ? `<div class="stats-mono-row stats-mono">Last Replicated: ${this.statsEscapeHtml(repl.last_replicated)}</div>` : ''}
+                    ${repl.last_reconciliation ? `<div class="stats-mono-row stats-mono">Last Reconciliation: ${this.statsEscapeHtml(repl.last_reconciliation)}</div>` : ''}
+                `;
+            } else if (iroh && iroh.status === 'not_configured') {
+                irohEl.innerHTML = '<div class="stats-empty">Iroh sidecar not configured</div>';
+            } else {
+                irohEl.innerHTML = '<div class="stats-empty">Loading...</div>';
+            }
+        }
+
+        // Zenoh Bridge
+        const zbEl = document.getElementById('debugZenohBridge');
+        if (zbEl) {
+            if (zenohBridge && zenohBridge.remote_peers != null) {
+                const endpoints = zenohBridge.remote_endpoints || [];
+                zbEl.innerHTML = `
+                    <div class="stats-mono-row stats-mono">Remote Peers: ${zenohBridge.remote_peers}</div>
+                    ${endpoints.length > 0 ? `<div class="stats-mono-row stats-mono">Endpoints: ${endpoints.map(e => this.statsEscapeHtml(e)).join('<br>')}</div>` : ''}
+                    <div class="stats-mono-row stats-mono">Received: ${zenohBridge.received ?? 0} | Written: ${zenohBridge.written ?? 0} | Self-Echo: ${zenohBridge.self_echo ?? 0}</div>
+                    <div class="stats-mono-row stats-mono">Verified: ${zenohBridge.sub_verified ?? 0} | Rejected: ${zenohBridge.sub_rejected ?? 0} | Duplicates: ${zenohBridge.duplicates ?? 0}</div>
+                    <div class="stats-mono-row stats-mono">CH Written: ${zenohBridge.ch_written ?? 0} | CH Buffer: ${zenohBridge.ch_buffer ?? 0}</div>
+                `;
+            } else if (zenohBridge && zenohBridge.status === 'not_configured') {
+                zbEl.innerHTML = '<div class="stats-empty">Zenoh bridge not configured</div>';
+            } else {
+                zbEl.innerHTML = '<div class="stats-empty">Loading...</div>';
+            }
+        }
+
+        // Replication Health
+        const replEl = document.getElementById('debugReplication');
+        if (replEl) {
+            const regions = replication?.regions || [];
+            if (regions.length > 0) {
+                replEl.innerHTML = regions.map(r => {
+                    let color, label;
+                    if (r.node_count >= 3) { color = '#4caf50'; label = 'healthy'; }
+                    else if (r.node_count === 2) { color = '#ff9800'; label = 'warning'; }
+                    else if (r.node_count === 1) { color = '#f44336'; label = 'critical'; }
+                    else { color = '#9e9e9e'; label = 'none'; }
+                    return `<div class="stats-health-row">
+                        <span class="stats-health-label">${this.statsEscapeHtml(r.scope_pattern)} <span style="color:var(--text-muted)">${r.node_count} node${r.node_count !== 1 ? 's' : ''}</span></span>
+                        <span class="health-dot" style="background:${color}" title="${label}"></span>
+                    </div>`;
+                }).join('');
+            } else {
+                replEl.innerHTML = '<div class="stats-empty">No store registrations</div>';
+            }
         }
     }
 
@@ -11584,8 +12004,30 @@ class Respiro {
                 // Update active tab
                 navTabs.forEach(t => t.classList.remove('active'));
                 tab.classList.add('active');
+
+                // Update URL hash without scrolling
+                history.replaceState(null, '', `#${view}`);
             });
         });
+
+        // On load, switch to the view specified in the URL hash
+        // Supports #map, #dashboard, #stats and optional params e.g. #map&zoom=3
+        const hashParts = window.location.hash.replace('#', '').split('&');
+        const hashView = hashParts[0];
+        if (hashView && ['map', 'dashboard', 'stats'].includes(hashView)) {
+            this.switchView(hashView);
+            navTabs.forEach(t => {
+                t.classList.toggle('active', t.dataset.view === hashView);
+            });
+
+            // Apply hash parameters (e.g. zoom=3)
+            for (const part of hashParts.slice(1)) {
+                const [key, val] = part.split('=');
+                if (key === 'zoom' && val && this.map) {
+                    this.map.setZoom(parseInt(val));
+                }
+            }
+        }
     }
 
     switchView(view) {
@@ -11785,7 +12227,7 @@ class Respiro {
                 <div class="device-meta">
                     <div class="meta-item"><strong>Source:</strong> ${device.data_source || 'Unknown'}</div>
                     <div class="meta-item"><strong>Location:</strong> ${locationStr}</div>
-                    <div class="meta-item"><strong>Board:</strong> ${device.board_model || 'Unknown'}</div>
+                    <div class="meta-item"><strong>Board:</strong> ${this.formatBoardModel(device.board_model)}</div>
                     <div class="meta-item"><strong>Readings:</strong> ${device.reading_count?.toLocaleString() || 0}</div>
                     ${device.node_info ? `<div class="meta-item"><strong>Setup:</strong> ${device.node_info}</div>` : ''}
                     ${device.node_info_url ? `<div class="meta-item"><a href="${device.node_info_url}" target="_blank" rel="noopener" style="color: #60a5fa;">View documentation</a></div>` : ''}

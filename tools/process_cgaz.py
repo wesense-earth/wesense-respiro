@@ -117,10 +117,11 @@ tippecanoe -o regions.pmtiles \\
   --layer=adm1 --named-layer=adm1:processed_adm1.geojson \\
   --layer=adm2 --named-layer=adm2:processed_adm2.geojson \\
   --minimum-zoom=0 \\
-  --maximum-zoom=12 \\
-  --simplification=10 \\
-  --drop-densest-as-needed \\
-  --extend-zooms-if-still-dropping \\
+  --maximum-zoom=10 \\
+  --simplification=1 \\
+  --no-feature-limit \\
+  --no-tile-size-limit \\
+  --no-tiny-polygon-reduction \\
   --force
 """)
 

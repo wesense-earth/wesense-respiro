@@ -17,7 +17,7 @@
     "dashboard"
   ],
   "author": "",
-  "license": "MIT",
+  "license": "AGPL-3.0-only",
   "dependencies": {
     "@clickhouse/client": "^1.14.0",
     "compression": "^1.7.4",

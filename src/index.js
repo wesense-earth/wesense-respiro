@@ -13,6 +13,14 @@ require('dotenv').config();
 const ClickHouseClient = require('./clickhouse-client');
 const RegionService = require('./region-service');
 
+// Internal TLS: upgrade http:// URLs to https:// when TLS_ENABLED
+const tlsUpgrade = (url) => {
+    if (process.env.TLS_ENABLED === 'true' && url) {
+        return url.replace('http://', 'https://');
+    }
+    return url;
+};
+
 // =============================================================================
 // H3 Swarm Configuration
 // =============================================================================
@@ -26,12 +34,17 @@ const MIN_SWARM_SIZE = 5;
 // Freshness thresholds per data source (in milliseconds)
 // Only sensors reporting within these thresholds are considered "active" for swarm membership
 const FRESHNESS_THRESHOLDS = {
-    'WESENSE': 10 * 60 * 1000,              // 10 minutes
-    'CHIRPSTACK': 10 * 60 * 1000,           // 10 minutes (self-hosted LoRaWAN)
-    'TTN': 10 * 60 * 1000,                  // 10 minutes (TTN LoRaWAN)
-    'MESHTASTIC_PUBLIC': 61 * 60 * 1000,    // 61 minutes
-    'MESHTASTIC_COMMUNITY': 61 * 60 * 1000, // 61 minutes
-    'MESHTASTIC_DOWNLINK': 61 * 60 * 1000,  // 61 minutes
+    'wesense': 10 * 60 * 1000,              // 10 minutes
+    'meshtastic': 61 * 60 * 1000,           // 61 minutes
+    'home_assistant': 10 * 60 * 1000,       // 10 minutes
+    'ecan': 15 * 60 * 1000,                 // 15 minutes
+    'tasman': 15 * 60 * 1000,
+    'nelson': 15 * 60 * 1000,
+    'marlborough': 15 * 60 * 1000,
+    'hawkesbay': 15 * 60 * 1000,
+    'gisborne': 15 * 60 * 1000,
+    'horizons': 15 * 60 * 1000,
+    'westcoast': 15 * 60 * 1000,
     'default': 10 * 60 * 1000               // Conservative default
 };
 
@@ -632,26 +645,110 @@ const app = express();
 // Exclude PMTiles from compression - it breaks HTTP Range requests required by PMTiles
 app.use(compression({
     filter: (req, res) => {
-        // Don't compress PMTiles - they need proper Range request support
-        if (req.url.endsWith('.pmtiles')) {
+        // Don't compress binary tile data — reverse proxies can double-compress
+        // or strip Content-Encoding, corrupting protobuf tile data
+        if (req.url.endsWith('.pmtiles') || req.url.endsWith('.mvt')) {
             return false;
         }
-        // Use default compression filter for everything else
         return compression.filter(req, res);
     }
 }));
 app.use(express.json());
 
-// Serve static files with appropriate caching (per architecture Section 8.2)
-// PMTiles uses HTTP range requests, so browser caches tile chunks efficiently
+// Serve vector tiles from PMTiles archive as individual tile responses.
+// Reverse proxies (nginx/SWAG/Caddy) corrupt PMTiles HTTP range requests by
+// buffering/recompressing partial responses. Serving individual tiles via a
+// standard API endpoint avoids range requests entirely.
+const pmtilesFilePath = path.join(__dirname, '../public/regions.pmtiles');
+let pmtilesReader = null;
+
+// Node.js file source for pmtiles (the built-in FileSource is Deno-only)
+class NodeFileSource {
+    constructor(filePath) {
+        this.filePath = filePath;
+        this.fd = null;
+    }
+
+    async getBytes(offset, length) {
+        if (this.fd === null) {
+            this.fd = fs.openSync(this.filePath, 'r');
+        }
+        const buffer = Buffer.alloc(length);
+        fs.readSync(this.fd, buffer, 0, length, offset);
+        return { data: buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) };
+    }
+
+    getKey() {
+        return this.filePath;
+    }
+
+    close() {
+        if (this.fd !== null) {
+            fs.closeSync(this.fd);
+            this.fd = null;
+        }
+    }
+}
+
+function getPMTilesReader() {
+    if (pmtilesReader && fs.existsSync(pmtilesFilePath)) {
+        return pmtilesReader;
+    }
+    if (fs.existsSync(pmtilesFilePath)) {
+        const { PMTiles } = require('pmtiles');
+        pmtilesReader = new PMTiles(new NodeFileSource(pmtilesFilePath));
+        console.log('PMTiles reader opened:', pmtilesFilePath);
+    }
+    return pmtilesReader;
+}
+
+// Invalidate reader when file changes (e.g., boundary regeneration)
+let pmtilesWatcher = null;
+function watchPMTiles() {
+    if (pmtilesWatcher) return;
+    try {
+        pmtilesWatcher = fs.watch(path.dirname(pmtilesFilePath), (event, filename) => {
+            if (filename === 'regions.pmtiles') {
+                console.log('PMTiles file changed, invalidating reader');
+                pmtilesReader = null;
+            }
+        });
+    } catch (e) {
+        // Ignore watch errors
+    }
+}
+watchPMTiles();
+
+app.get('/api/tiles/:z/:x/:y.mvt', async (req, res) => {
+    const reader = getPMTilesReader();
+    if (!reader) {
+        return res.status(404).send('PMTiles file not available');
+    }
+
+    const z = parseInt(req.params.z);
+    const x = parseInt(req.params.x);
+    const y = parseInt(req.params.y);
+
+    try {
+        const tile = await reader.getZxy(z, x, y);
+        if (!tile || !tile.data) {
+            return res.status(204).end();  // No tile at this coordinate
+        }
+
+        res.set('Content-Type', 'application/vnd.mapbox-vector-tile');
+        res.set('Cache-Control', 'public, max-age=3600');
+        res.send(Buffer.from(tile.data));
+    } catch (err) {
+        console.error(`Tile error ${z}/${x}/${y}:`, err.message);
+        res.status(500).end();
+    }
+});
+
+// Serve static files with appropriate caching
 app.use(express.static(path.join(__dirname, '../public'), {
+    etag: false,
     setHeaders: (res, filePath) => {
-        if (filePath.endsWith('.pmtiles')) {
-            // PMTiles: aggressive caching (immutable, long TTL)
-            res.set('Accept-Ranges', 'bytes');
-            res.set('Access-Control-Allow-Origin', '*');
-            res.set('Cache-Control', 'public, max-age=31536000, immutable');
-        } else if (filePath.endsWith('.html')) {
+        if (filePath.endsWith('.html')) {
             // HTML: no cache (may change frequently)
             res.set('Cache-Control', 'no-cache');
         } else if (filePath.endsWith('.js') || filePath.endsWith('.css')) {
@@ -1227,11 +1324,20 @@ app.get('/api/regions/status', async (req, res) => {
         for (const metric of METRICS) {
             status.data[`adm${adminLevel}`][metric] = {};
             for (const deployment of DEPLOYMENT_FILTERS) {
-                const data = precomputedRegions[adminLevel]?.[metric]?.[deployment];
-                status.data[`adm${adminLevel}`][metric][deployment] = data ? {
-                    region_count: Object.keys(data.regions).length,
-                    timestamp: new Date(data.timestamp).toISOString()
-                } : null;
+                const deploymentData = precomputedRegions[adminLevel]?.[metric]?.[deployment];
+                if (deploymentData && typeof deploymentData === 'object') {
+                    // deploymentData is keyed by timeWindow: { '1h': { regions, timestamp }, '24h': { regions, timestamp }, ... }
+                    const windows = {};
+                    for (const [tw, data] of Object.entries(deploymentData)) {
+                        windows[tw] = data?.regions ? {
+                            region_count: Object.keys(data.regions).length,
+                            timestamp: new Date(data.timestamp).toISOString()
+                        } : null;
+                    }
+                    status.data[`adm${adminLevel}`][metric][deployment] = windows;
+                } else {
+                    status.data[`adm${adminLevel}`][metric][deployment] = null;
+                }
             }
         }
     }
@@ -1490,7 +1596,9 @@ app.get('/api/comparison', async (req, res) => {
 // Aggregated network overview (ClickHouse stats + in-memory state)
 app.get('/api/stats/overview', async (req, res) => {
     try {
-        const stats = await clickHouseClient.queryNetworkStats();
+        const allowed = ['1h', '24h', '7d', 'all'];
+        const range = allowed.includes(req.query.range) ? req.query.range : '1h';
+        const stats = await clickHouseClient.queryNetworkStats(range);
         res.json({
             ...(stats || {}),
             clickhouse_connected: clickHouseClient.isConnected(),
@@ -1507,10 +1615,7 @@ app.get('/api/stats/overview', async (req, res) => {
 });
 
 // OrbitDB proxy endpoints (gated on ORBITDB_URL env var)
-const ORBITDB_URL = process.env.ORBITDB_URL;
-const IPFS_GATEWAY_URL = (process.env.IPFS_GATEWAY_URL || 'https://dweb.link').replace(/\/+$/, '');
-const KUBO_API_URL = process.env.KUBO_API_URL;
-
+const ORBITDB_URL = tlsUpgrade(process.env.ORBITDB_URL);
 if (ORBITDB_URL) {
     console.log(`OrbitDB proxy enabled → ${ORBITDB_URL}`);
 
@@ -1534,54 +1639,290 @@ if (ORBITDB_URL) {
     app.get('/api/stats/orbitdb', proxyToOrbitDB('/health'));
     app.get('/api/stats/nodes', proxyToOrbitDB('/nodes'));
     app.get('/api/stats/trust', proxyToOrbitDB('/trust'));
+    app.get('/api/stats/stores', proxyToOrbitDB('/stores'));
+    app.get('/api/stats/replication', proxyToOrbitDB('/stores/replication'));
 } else {
     // Return offline status when OrbitDB is not configured
     app.get('/api/stats/orbitdb', (req, res) => res.json({ status: 'not_configured' }));
     app.get('/api/stats/nodes', (req, res) => res.json({ nodes: [] }));
     app.get('/api/stats/trust', (req, res) => res.json({ trust: [] }));
+    app.get('/api/stats/stores', (req, res) => res.json({ stores: [] }));
+    app.get('/api/stats/replication', (req, res) => res.json({ regions: [] }));
 }
 
-// IPFS archive stats — queries Kubo for MFS root CID and peer ID
-if (KUBO_API_URL) {
-    console.log(`Kubo IPFS proxy enabled → ${KUBO_API_URL}`);
+// Gateway archive stats proxy (gated on GATEWAY_URL env var)
+const GATEWAY_URL = tlsUpgrade(process.env.GATEWAY_URL);
+if (GATEWAY_URL) {
+    console.log(`Gateway proxy enabled → ${GATEWAY_URL}`);
 
-    app.get('/api/stats/archives', async (req, res) => {
+    app.get('/api/stats/archive', async (req, res) => {
         try {
-            // Get MFS root CID
-            const statUrl = new URL('/api/v0/files/stat?arg=/', KUBO_API_URL);
-            const statResp = await fetch(statUrl.toString(), {
-                method: 'POST',
-                signal: AbortSignal.timeout(10000),
+            const url = new URL('/archive/stats', GATEWAY_URL);
+            const response = await fetch(url.toString(), {
+                signal: AbortSignal.timeout(30000),
             });
-            const statData = await statResp.json();
+            const archiveData = await response.json();
 
-            // Get Kubo peer ID for IPNS resolution
-            const idUrl = new URL('/api/v0/id', KUBO_API_URL);
-            const idResp = await fetch(idUrl.toString(), {
-                method: 'POST',
-                signal: AbortSignal.timeout(10000),
-            });
-            const idData = await idResp.json();
+            // Add ClickHouse comparison
+            let comparison = null;
+            try {
+                const chResult = await clickHouseClient.query({
+                    query: `
+                        SELECT
+                            count() as total,
+                            countIf(signature != '' AND geo_country != '' AND geo_subdivision != '') as archivable,
+                            min(toDate(timestamp)) as earliest,
+                            max(toDate(timestamp)) as latest,
+                            uniqExact(geo_country, geo_subdivision, toDate(timestamp)) as total_days
+                        FROM sensor_readings
+                        WHERE timestamp > '2020-01-01'
+                    `,
+                    format: 'JSONEachRow'
+                });
+                const rows = await chResult.json();
+                if (rows.length > 0) {
+                    const r = rows[0];
+                    comparison = {
+                        total_readings: r.total,
+                        archivable_readings: r.archivable,
+                        total_days: r.total_days,
+                        date_range: r.earliest && r.latest ? `${r.earliest} to ${r.latest}` : null,
+                    };
+                }
+            } catch (chErr) {
+                console.error('ClickHouse comparison query failed:', chErr.message);
+            }
 
-            res.json({
-                root_cid: statData.Hash || null,
-                ipns: idData.ID ? { name: idData.ID, cid: statData.Hash } : null,
-                gateway_url: IPFS_GATEWAY_URL,
-            });
+            res.json({ archive: archiveData, comparison });
         } catch (error) {
-            console.error('Kubo proxy error (/api/stats/archives):', error.message);
-            res.status(502).json({ error: 'Kubo IPFS unavailable' });
+            console.error('Gateway archive stats proxy error:', error.message);
+            res.status(502).json({ error: 'Gateway unavailable' });
+        }
+    });
+
+    app.post('/api/archive/trigger', async (req, res) => {
+        try {
+            const url = new URL('/archive/trigger', GATEWAY_URL);
+            const response = await fetch(url.toString(), {
+                method: 'POST',
+                signal: AbortSignal.timeout(10000),
+            });
+            const data = await response.json();
+            res.status(response.status).json(data);
+        } catch (error) {
+            console.error('Gateway trigger proxy error:', error.message);
+            res.status(502).json({ error: 'Gateway unavailable' });
         }
     });
 } else {
-    app.get('/api/stats/archives', (req, res) => res.json({ status: 'not_configured', gateway_url: IPFS_GATEWAY_URL }));
+    app.get('/api/stats/archive', (req, res) => res.json({ status: 'not_configured' }));
+    app.post('/api/archive/trigger', (req, res) => res.json({ status: 'not_configured' }));
+}
+
+// Archive Replicator proxy endpoints (gated on ARCHIVE_REPLICATOR_URL env var)
+const ARCHIVE_REPLICATOR_URL = tlsUpgrade(process.env.ARCHIVE_REPLICATOR_URL);
+if (ARCHIVE_REPLICATOR_URL) {
+    console.log(`Archive replicator proxy enabled → ${ARCHIVE_REPLICATOR_URL}`);
+
+    const proxyToIroh = (endpoint) => async (req, res) => {
+        try {
+            const url = new URL(endpoint, ARCHIVE_REPLICATOR_URL);
+            const response = await fetch(url.toString(), {
+                signal: AbortSignal.timeout(30000),
+            });
+            const data = await response.json();
+            res.status(response.status).json(data);
+        } catch (error) {
+            console.error(`Iroh proxy error (${endpoint}):`, error.message);
+            res.status(502).json({ error: 'Iroh sidecar unavailable' });
+        }
+    };
+
+    app.get('/api/stats/iroh', proxyToIroh('/status'));
+} else {
+    app.get('/api/stats/iroh', (req, res) => res.json({ status: 'not_configured' }));
+}
+
+// Storage stats — disk usage across ClickHouse, archive replicator, OrbitDB
+app.get('/api/stats/storage', async (req, res) => {
+    const storage = {};
+
+    // ClickHouse table sizes — requires SELECT on system.parts (granted in 00-create-app-user.sh).
+    // Falls back to count-only queries if the grant is missing.
+    try {
+        if (clickHouseClient.connected) {
+            // Try system.parts first for disk size info
+            let diskStats = null;
+            try {
+                const diskResult = await clickHouseClient.query({
+                    query: `SELECT
+                        database,
+                        table,
+                        sum(bytes_on_disk) as bytes,
+                        sum(rows) as rows
+                    FROM system.parts
+                    WHERE active
+                    GROUP BY database, table
+                    ORDER BY sum(bytes_on_disk) DESC`,
+                    format: 'JSONEachRow'
+                });
+                diskStats = await diskResult.json();
+            } catch {
+                // No access to system.parts — fall back below
+            }
+
+            // Sensor readings summary
+            const sensorResult = await clickHouseClient.query({
+                query: `SELECT
+                    count() as rows,
+                    min(timestamp) as earliest,
+                    max(timestamp) as latest,
+                    uniq(device_id) as devices,
+                    uniq(geo_country) as countries,
+                    uniq(geo_country, geo_subdivision) as regions
+                FROM wesense.sensor_readings`,
+                format: 'JSONEachRow'
+            });
+            const sensorRows = await sensorResult.json();
+            const sensor = sensorRows[0] || {};
+
+            // Compute disk sizes from system.parts if available
+            let sensorDiskSize = null;
+            let systemLogsDiskSize = null;
+            let totalDiskSize = null;
+            if (diskStats) {
+                const sensorParts = diskStats.filter(r => r.database === 'wesense' && r.table === 'sensor_readings');
+                const sensorBytes = sensorParts.reduce((s, r) => s + Number(r.bytes || 0), 0);
+                sensorDiskSize = sensorBytes > 0 ? formatBytes(sensorBytes) : null;
+
+                const systemParts = diskStats.filter(r => r.database === 'system');
+                const systemBytes = systemParts.reduce((s, r) => s + Number(r.bytes || 0), 0);
+                systemLogsDiskSize = systemBytes > 0 ? formatBytes(systemBytes) : null;
+
+                const totalBytes = diskStats.reduce((s, r) => s + Number(r.bytes || 0), 0);
+                totalDiskSize = totalBytes > 0 ? formatBytes(totalBytes) : null;
+            }
+
+            storage.clickhouse = {
+                sensor_readings: {
+                    rows: Number(sensor.rows || 0),
+                    disk_size: sensorDiskSize,
+                    devices: Number(sensor.devices || 0),
+                    countries: Number(sensor.countries || 0),
+                    regions: Number(sensor.regions || 0),
+                    earliest: sensor.earliest || null,
+                    latest: sensor.latest || null
+                },
+                system_logs_size: systemLogsDiskSize,
+                total_disk_size: totalDiskSize
+            };
+        }
+    } catch (err) {
+        // Never expose raw error messages — they may contain credentials
+        console.error('Storage stats ClickHouse error:', err.message);
+        storage.clickhouse = { error: 'ClickHouse query failed' };
+    }
+
+    // Archive replicator — blob count and path index summary
+    if (ARCHIVE_REPLICATOR_URL) {
+        try {
+            const statusUrl = new URL('/status', ARCHIVE_REPLICATOR_URL);
+            const response = await fetch(statusUrl.toString(), {
+                signal: AbortSignal.timeout(10000)
+            });
+            const data = await response.json();
+
+            // Extract storage-relevant fields from the replicator status
+            storage.archives = {
+                total_blobs: data.blob_count || null,
+                total_size: data.total_size || null,
+                scope: data.guardian_scope ? data.guardian_scope.join(', ') : null
+            };
+        } catch (err) {
+            console.error('Storage stats archive error:', err.message);
+            storage.archives = { error: 'Archive query failed' };
+        }
+    }
+
+    // OrbitDB blockstore size
+    if (ORBITDB_URL) {
+        try {
+            const healthUrl = new URL('/health', ORBITDB_URL);
+            const response = await fetch(healthUrl.toString(), {
+                signal: AbortSignal.timeout(10000)
+            });
+            const data = await response.json();
+
+            storage.orbitdb = {
+                blocks: data.blocks || data.blockstore_blocks || null,
+                peers: data.peers || null
+            };
+
+            // Get blacklist stats
+            const blacklistUrl = new URL('/blacklist', ORBITDB_URL);
+            const blResponse = await fetch(blacklistUrl.toString(), {
+                signal: AbortSignal.timeout(5000)
+            });
+            if (blResponse.ok) {
+                const blData = await blResponse.json();
+                storage.orbitdb.blacklisted_blocks = blData.blacklisted || 0;
+                storage.orbitdb.pending_failures = blData.pendingFailures || 0;
+            }
+        } catch (err) {
+            console.error('Storage stats OrbitDB error:', err.message);
+            storage.orbitdb = { error: 'OrbitDB query failed' };
+        }
+    }
+
+    res.json(storage);
+});
+
+function formatBytes(bytes) {
+    if (bytes === 0) return '0 B';
+    const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    return (bytes / Math.pow(1024, i)).toFixed(2) + ' ' + units[i];
+}
+
+// Live Transport stats proxy (gated on LIVE_TRANSPORT_URL env var)
+const LIVE_TRANSPORT_URL = tlsUpgrade(process.env.LIVE_TRANSPORT_URL);
+if (LIVE_TRANSPORT_URL) {
+    console.log(`Live transport proxy enabled → ${LIVE_TRANSPORT_URL}`);
+
+    app.get('/api/stats/zenoh-bridge', async (req, res) => {
+        try {
+            const url = new URL('/stats', LIVE_TRANSPORT_URL);
+            const response = await fetch(url.toString(), {
+                signal: AbortSignal.timeout(10000),
+            });
+            const data = await response.json();
+            res.status(response.status).json(data);
+        } catch (error) {
+            console.error('Zenoh bridge proxy error:', error.message);
+            res.status(502).json({ error: 'Zenoh bridge unavailable' });
+        }
+    });
+} else {
+    app.get('/api/stats/zenoh-bridge', (req, res) => res.json({ status: 'not_configured' }));
 }
 
 // Contribution breakdown (local vs P2P, by data source)
 app.get('/api/stats/contribution', async (req, res) => {
     try {
-        const contribution = await clickHouseClient.queryContribution();
-        res.json(contribution || { local: {}, p2p: {} });
+        const allowed = ['1h', '24h', '7d', 'all'];
+        const range = allowed.includes(req.query.range) ? req.query.range : '1h';
+        const [bySource, byType] = await Promise.all([
+            clickHouseClient.queryContribution(range),
+            clickHouseClient.queryContributionByType(range)
+        ]);
+        res.json({
+            by_source: bySource || { local: {}, p2p: {} },
+            by_type: byType?.by_type || { local: {}, p2p: {} },
+            all_reading_types: byType?.all_reading_types || [],
+            // Backwards compat: keep local/p2p at top level for any other consumers
+            local: bySource?.local || {},
+            p2p: bySource?.p2p || {}
+        });
     } catch (error) {
         console.error('Error fetching contribution data:', error);
         res.status(500).json({ error: 'Failed to fetch contribution data' });
@@ -1605,36 +1946,35 @@ app.get('/api/stats/network', async (req, res) => {
 
     // Determine which services to check based on env vars
     const checks = [];
+    const isTLS = process.env.TLS_ENABLED === 'true';
 
     // ClickHouse
     const chHost = process.env.CLICKHOUSE_HOST || 'clickhouse';
-    const chPort = parseInt(process.env.CLICKHOUSE_PORT || '8123', 10);
+    const chPort = isTLS ? 8443 : parseInt(process.env.CLICKHOUSE_PORT || '8123', 10);
     checks.push({ name: 'ClickHouse', host: chHost, port: chPort, internal: true });
 
-    // MQTT
+    // MQTT (EMQX)
     const mqttUrl = process.env.MQTT_BROKER_URL || '';
     if (mqttUrl) {
         try {
             const u = new URL(mqttUrl);
-            checks.push({ name: 'MQTT (EMQX)', host: u.hostname, port: parseInt(u.port || '1883', 10), internal: true });
+            checks.push({ name: 'EMQX', host: u.hostname, port: parseInt(u.port || '1883', 10), internal: true });
         } catch {}
     }
 
     // OrbitDB
-    const orbitUrl = process.env.ORBITDB_URL || '';
-    if (orbitUrl) {
+    if (ORBITDB_URL) {
         try {
-            const u = new URL(orbitUrl);
+            const u = new URL(ORBITDB_URL);
             checks.push({ name: 'OrbitDB', host: u.hostname, port: parseInt(u.port || '5200', 10), internal: true });
         } catch {}
     }
 
-    // Kubo IPFS
-    const kuboUrlCheck = process.env.KUBO_API_URL || '';
-    if (kuboUrlCheck) {
+    // Storage Broker
+    if (GATEWAY_URL) {
         try {
-            const u = new URL(kuboUrlCheck);
-            checks.push({ name: 'Kubo IPFS', host: u.hostname, port: parseInt(u.port || '5001', 10), internal: true });
+            const u = new URL(GATEWAY_URL);
+            checks.push({ name: 'Storage Broker', host: u.hostname, port: parseInt(u.port || '8080', 10), internal: true });
         } catch {}
     }
 
@@ -1644,6 +1984,22 @@ app.get('/api/stats/network', async (req, res) => {
         try {
             const u = new URL(zenohUrl);
             checks.push({ name: 'Zenoh API', host: u.hostname, port: parseInt(u.port || '5100', 10), internal: true });
+        } catch {}
+    }
+
+    // Live Transport
+    if (LIVE_TRANSPORT_URL) {
+        try {
+            const u = new URL(LIVE_TRANSPORT_URL);
+            checks.push({ name: 'Live Transport', host: u.hostname, port: parseInt(u.port || '5300', 10), internal: true });
+        } catch {}
+    }
+
+    // Archive Replicator
+    if (ARCHIVE_REPLICATOR_URL) {
+        try {
+            const u = new URL(ARCHIVE_REPLICATOR_URL);
+            checks.push({ name: 'Archive Replicator', host: u.hostname, port: parseInt(u.port || '4400', 10), internal: true });
         } catch {}
     }
 
@@ -1674,53 +2030,6 @@ app.get('/api/stats/zenoh', async (req, res) => {
     }
 });
 
-
-// Kubo IPFS health proxy for stats
-app.get('/api/stats/kubo', async (req, res) => {
-    const kuboUrl = process.env.KUBO_API_URL;
-    if (!kuboUrl) {
-        return res.json({ status: 'not_configured' });
-    }
-    try {
-        // Get node identity (peer ID, addresses, protocols)
-        const idUrl = new URL('/api/v0/id', kuboUrl);
-        const idResp = await fetch(idUrl.toString(), {
-            method: 'POST',
-            signal: AbortSignal.timeout(10000),
-        });
-        const idData = await idResp.json();
-
-        // Get connected peers
-        const peersUrl = new URL('/api/v0/swarm/peers', kuboUrl);
-        const peersResp = await fetch(peersUrl.toString(), {
-            method: 'POST',
-            signal: AbortSignal.timeout(10000),
-        });
-        const peersData = await peersResp.json();
-        const peerList = peersData.Peers || [];
-
-        // Get repo stats (storage usage)
-        const repoUrl = new URL('/api/v0/repo/stat', kuboUrl);
-        const repoResp = await fetch(repoUrl.toString(), {
-            method: 'POST',
-            signal: AbortSignal.timeout(10000),
-        });
-        const repoData = await repoResp.json();
-
-        res.json({
-            status: 'healthy',
-            peer_id: idData.ID || '',
-            addresses: idData.Addresses || [],
-            agent_version: idData.AgentVersion || '',
-            peer_count: peerList.length,
-            repo_size: repoData.RepoSize || 0,
-            num_objects: repoData.NumObjects || 0,
-        });
-    } catch (error) {
-        console.error('Kubo health proxy error:', error.message);
-        res.status(502).json({ status: 'offline', error: 'Kubo unavailable' });
-    }
-});
 
 // =============================================================================
 // Docker Container Stats (optional — gated on DOCKER_STATS_ENABLED env var)
@@ -2087,8 +2396,10 @@ function generatePMTiles(pmtilesPath, boundariesDir, skipTippecanoe = false) {
                 ...layers,
                 '--minimum-zoom=0',
                 '--maximum-zoom=10',
-                '--simplification=10',
-                '--drop-densest-as-needed',
+                '--simplification=1',
+                '--no-feature-limit',
+                '--no-tile-size-limit',
+                '--no-tiny-polygon-reduction',
                 '--force'
             ], { cwd: boundariesDir });
 

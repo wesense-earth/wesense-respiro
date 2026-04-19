@@ -1,4 +1,5 @@
 const mqtt = require('mqtt');
+const fs = require('fs');
 
 class MqttManager {
     constructor(sensorStore) {
@@ -14,6 +15,11 @@ class MqttManager {
         if (process.env.MQTT_USERNAME && process.env.MQTT_PASSWORD) {
             options.username = process.env.MQTT_USERNAME;
             options.password = process.env.MQTT_PASSWORD;
+        }
+
+        // TLS: for wss:// or mqtts:// URLs with a custom CA (self-signed deployments)
+        if (process.env.TLS_CA_CERTFILE && fs.existsSync(process.env.TLS_CA_CERTFILE)) {
+            options.ca = [fs.readFileSync(process.env.TLS_CA_CERTFILE)];
         }
 
         this.client = mqtt.connect(brokerUrl, {

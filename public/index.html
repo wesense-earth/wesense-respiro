@@ -1985,6 +1985,17 @@
             margin: 0;
         }
 
+        .stats-header-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .stats-time-pills {
+            display: flex;
+            gap: 4px;
+        }
+
         .stats-refresh-btn {
             background: var(--bg-secondary);
             border: 1px solid var(--border-color, rgba(0,0,0,0.1));
@@ -2098,6 +2109,58 @@
             font-size: 14px;
         }
 
+        /* Reading type coverage rows (My Contribution) */
+        .stats-type-row {
+            padding: 8px 0;
+        }
+
+        .stats-type-row + .stats-type-row {
+            border-top: 1px solid rgba(128,128,128,0.1);
+        }
+
+        .stats-type-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 4px;
+        }
+
+        .stats-type-name {
+            color: var(--text-secondary);
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .stats-type-meta {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            color: var(--accent-color);
+        }
+
+        .stats-type-missing .stats-type-name {
+            color: var(--text-muted);
+        }
+
+        .stats-type-missing .stats-type-meta {
+            color: var(--text-muted);
+            font-style: italic;
+            font-family: inherit;
+        }
+
+        .stats-coverage-bar {
+            width: 100%;
+            height: 4px;
+            background: rgba(128,128,128,0.15);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .stats-coverage-fill {
+            height: 100%;
+            border-radius: 2px;
+            transition: width 0.4s ease;
+        }
+
         /* Health indicator dots */
         .stats-health-row {
             display: flex;
@@ -2178,6 +2241,7 @@
         .source-dot.meshtastic-community { background: #9333EA; }
         .source-dot.homeassistant { background: #0EA5E9; }
         .source-dot.ttn { background: #F97316; }
+        .source-dot.govt-aq { background: #1E5AA8; }
         .source-dot.default { background: #8D8478; }
 
         /* Debug section */
@@ -2345,6 +2409,111 @@
             .stats-hero {
                 grid-template-columns: 1fr;
             }
+        }
+
+        /* Archive stats table */
+        .archive-summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        .archive-summary-item {
+            text-align: center;
+        }
+        .archive-summary-value {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--text-primary, #fff);
+        }
+        .archive-summary-label {
+            font-size: 11px;
+            color: var(--text-muted, #94a3b8);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .archive-region-wrapper {
+            max-height: 500px;
+            overflow-y: auto;
+            border: 1px solid rgba(128,128,128,0.15);
+            border-radius: 6px;
+        }
+        .archive-region-wrapper::-webkit-scrollbar {
+            width: 6px;
+        }
+        .archive-region-wrapper::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .archive-region-wrapper::-webkit-scrollbar-thumb {
+            background: rgba(128,128,128,0.3);
+            border-radius: 3px;
+        }
+        .archive-region-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        .archive-region-table thead {
+            position: sticky;
+            top: 0;
+            background: var(--card-bg, #1e293b);
+            z-index: 1;
+        }
+        .archive-region-table th {
+            text-align: left;
+            padding: 6px 8px;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted, #94a3b8);
+            border-bottom: 1px solid rgba(128,128,128,0.2);
+            cursor: pointer;
+            user-select: none;
+        }
+        .archive-region-table th:hover {
+            color: var(--text-primary, #fff);
+        }
+        .archive-region-table th .sort-arrow {
+            font-size: 10px;
+            margin-left: 2px;
+        }
+        .archive-region-table td {
+            padding: 5px 8px;
+            border-bottom: 1px solid rgba(128,128,128,0.08);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+        }
+        .archive-region-table tr:last-child td {
+            border-bottom: none;
+        }
+        .archive-gap-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-left: 4px;
+        }
+        .archive-gap-indicator.no-gaps { background: #22c55e; }
+        .archive-gap-indicator.has-gaps { background: #f59e0b; }
+        .archive-comparison {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid rgba(128,128,128,0.15);
+            font-size: 12px;
+            color: var(--text-muted, #94a3b8);
+        }
+        .archive-comparison .bar-track {
+            height: 6px;
+            background: rgba(128,128,128,0.15);
+            border-radius: 3px;
+            margin-top: 4px;
+            overflow: hidden;
+        }
+        .archive-comparison .bar-fill {
+            height: 100%;
+            background: #3b82f6;
+            border-radius: 3px;
+            transition: width 0.3s ease;
         }
 
         /* ============= NEW DASHBOARD LAYOUT ============= */
@@ -8672,26 +8841,34 @@
             <div id="statsView" class="dash-view">
                 <div class="stats-header">
                     <h2>Network Stats</h2>
-                    <button class="stats-refresh-btn" id="statsRefreshBtn" title="Refresh stats">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
-                            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-                        </svg>
-                        Refresh
-                    </button>
+                    <div class="stats-header-controls">
+                        <div class="stats-time-pills" id="statsTimePills">
+                            <button class="time-nav-btn active" data-stats-range="1h">1h</button>
+                            <button class="time-nav-btn" data-stats-range="24h">24h</button>
+                            <button class="time-nav-btn" data-stats-range="7d">7d</button>
+                            <button class="time-nav-btn" data-stats-range="all">All</button>
+                        </div>
+                        <button class="stats-refresh-btn" id="statsRefreshBtn" title="Refresh stats">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+                                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                            </svg>
+                            Refresh
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Hero row -->
                 <div class="stats-hero">
-                    <div class="stats-hero-card">
+                    <div class="stats-hero-card" title="Sync (OrbitDB): Node discovery &amp; state sync&#10;Live (Zenoh): Real-time sensor data pub/sub&#10;Archive (Iroh): Content-addressed data replication">
                         <div class="stats-hero-value" id="statsPeers">--</div>
-                        <div class="stats-hero-label">P2P Peers</div>
-                        <div class="stats-hero-sub" id="statsPeersSub"></div>
+                        <div class="stats-hero-label">Sync / Live / Archive</div>
+                        <div class="stats-hero-sub" id="statsPeersSub">OrbitDB / Zenoh / Iroh</div>
                     </div>
                     <div class="stats-hero-card">
                         <div class="stats-hero-value" id="statsDevices">--</div>
                         <div class="stats-hero-label">Devices Online</div>
-                        <div class="stats-hero-sub" id="statsDevicesSub">last 24h</div>
+                        <div class="stats-hero-sub" id="statsDevicesSub">last 1h</div>
                     </div>
                     <div class="stats-hero-card">
                         <div class="stats-hero-value" id="statsRate">--</div>
@@ -8731,29 +8908,37 @@
                         </div>
                     </div>
 
-                    <!-- Network Health -->
+                    <!-- Service Health -->
                     <div class="stats-card">
-                        <div class="stats-card-title">Network Health</div>
+                        <div class="stats-card-title">Service Health</div>
                         <div id="statsHealth">
                             <div class="stats-health-row">
                                 <span class="stats-health-label">ClickHouse</span>
                                 <span class="health-dot unknown" id="healthClickhouse"></span>
                             </div>
                             <div class="stats-health-row">
-                                <span class="stats-health-label">Zenoh Bridge</span>
-                                <span class="health-dot unknown" id="healthZenoh"></span>
+                                <span class="stats-health-label">EMQX</span>
+                                <span class="health-dot unknown" id="healthMqtt"></span>
+                            </div>
+                            <div class="stats-health-row">
+                                <span class="stats-health-label">Storage Broker</span>
+                                <span class="health-dot unknown" id="healthGateway"></span>
+                            </div>
+                            <div class="stats-health-row">
+                                <span class="stats-health-label">Archive Replicator</span>
+                                <span class="health-dot unknown" id="healthIroh"></span>
                             </div>
                             <div class="stats-health-row">
                                 <span class="stats-health-label">OrbitDB</span>
                                 <span class="health-dot unknown" id="healthOrbitdb"></span>
                             </div>
                             <div class="stats-health-row">
-                                <span class="stats-health-label">Kubo IPFS</span>
-                                <span class="health-dot unknown" id="healthKubo"></span>
+                                <span class="stats-health-label">Live Transport</span>
+                                <span class="health-dot unknown" id="healthZenoh"></span>
                             </div>
                             <div class="stats-health-row">
-                                <span class="stats-health-label">MQTT Broker</span>
-                                <span class="health-dot unknown" id="healthMqtt"></span>
+                                <span class="stats-health-label">Zenoh API</span>
+                                <span class="health-dot unknown" id="healthZenohApi"></span>
                             </div>
                         </div>
                     </div>
@@ -8779,6 +8964,32 @@
                 <div class="stats-card" style="margin-bottom:24px">
                     <div class="stats-card-title">Resources</div>
                     <div id="statsContainers">
+                        <div class="stats-empty">Loading...</div>
+                    </div>
+                </div>
+
+                <!-- Storage -->
+                <div class="stats-card" style="margin-bottom:24px">
+                    <div class="stats-card-title">Storage</div>
+                    <div id="statsStorage">
+                        <div class="stats-empty">Loading...</div>
+                    </div>
+                </div>
+
+                <!-- Archive section -->
+                <div class="stats-card" style="margin-bottom:24px" id="statsArchiveCard">
+                    <div class="stats-card-title" style="display:flex;align-items:center;justify-content:space-between">
+                        Archive
+                        <button class="stats-refresh-btn" id="archiveTriggerBtn" title="Trigger archive cycle" style="display:none">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="7 10 12 15 17 10"/>
+                                <line x1="12" y1="15" x2="12" y2="3"/>
+                            </svg>
+                            Archive Now
+                        </button>
+                    </div>
+                    <div id="statsArchive">
                         <div class="stats-empty">Loading...</div>
                     </div>
                 </div>
@@ -8830,27 +9041,11 @@
                         </div>
                     </div>
 
-                    <!-- Network Ports -->
+                    <!-- Service Connectivity -->
                     <div class="stats-debug-card">
-                        <div class="stats-debug-card-title">Network Ports</div>
+                        <div class="stats-debug-card-title">Service Connectivity</div>
                         <div id="debugNetworkPorts">
                             <div class="stats-empty">Loading...</div>
-                        </div>
-                    </div>
-
-                    <!-- Kubo IPFS -->
-                    <div class="stats-debug-card">
-                        <div class="stats-debug-card-title">Kubo IPFS</div>
-                        <div id="debugKubo">
-                            <div class="stats-empty">Not connected</div>
-                        </div>
-                    </div>
-
-                    <!-- IPFS Archives -->
-                    <div class="stats-debug-card">
-                        <div class="stats-debug-card-title">IPFS Archives</div>
-                        <div id="debugIPFS">
-                            <div class="stats-empty">Not connected</div>
                         </div>
                     </div>
 
@@ -8858,6 +9053,30 @@
                     <div class="stats-debug-card">
                         <div class="stats-debug-card-title">Background Tasks</div>
                         <div id="debugTasks">
+                            <div class="stats-empty">Loading...</div>
+                        </div>
+                    </div>
+
+                    <!-- Zenoh Bridge -->
+                    <div class="stats-debug-card">
+                        <div class="stats-debug-card-title">Zenoh Bridge</div>
+                        <div id="debugZenohBridge">
+                            <div class="stats-empty">Loading...</div>
+                        </div>
+                    </div>
+
+                    <!-- Iroh Sidecar -->
+                    <div class="stats-debug-card">
+                        <div class="stats-debug-card-title">Iroh Sidecar</div>
+                        <div id="debugIroh">
+                            <div class="stats-empty">Loading...</div>
+                        </div>
+                    </div>
+
+                    <!-- Replication Health -->
+                    <div class="stats-debug-card">
+                        <div class="stats-debug-card-title">Replication Health</div>
+                        <div id="debugReplication">
                             <div class="stats-empty">Loading...</div>
                         </div>
                     </div>

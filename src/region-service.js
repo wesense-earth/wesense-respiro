@@ -34,20 +34,24 @@ class RegionService {
      *
      * Zoom mapping:
      * - Zoom 0-1:  ADM0 (countries)
-     * - Zoom 2-4:  ADM1 (states/regions)
-     * - Zoom 5-7:  ADM2 (districts)
-     * - Zoom 8-10: ADM3 (sub-districts) - 81 countries have this
-     * - Zoom 11+:  ADM4 (localities) - 21 countries have this
+     * - Zoom 2-6:  ADM1 (states/regions)
+     * - Zoom 7-9:  ADM2 (districts)
+     * - Zoom 10-12: ADM3 (sub-districts) - 81 countries have this
+     * - Zoom 13+:  ADM4 (localities) - 21 countries have this
      *
      * Note: ADM3/ADM4 may not exist for all regions. The precomputed data
      * will simply be empty for regions without finer admin levels.
+     *
+     * Zoom ranges account for protomaps-leaflet levelDiff=2 (data tiles are
+     * 2 zoom levels below display zoom). Small ADM2 polygons (e.g. Auckland
+     * local board areas) need higher zoom data tiles to be visible.
      */
     getAdminLevelForZoom(zoom) {
-        // PMTiles has ADM0-3
         if (zoom <= 1) return 0;
-        if (zoom <= 4) return 1;
-        if (zoom <= 7) return 2;
-        return 3;  // ADM3 for zoom 8+
+        if (zoom <= 6) return 1;
+        if (zoom <= 9) return 2;
+        if (zoom <= 12) return 3;
+        return 4;
     }
 
     /**
@@ -405,7 +409,7 @@ class RegionService {
                         count(*) as sensor_count,
                         max(dev.latest_timestamp) as latest_timestamp
                     FROM device_data AS dev
-                    INNER JOIN wesense_respiro.device_region_cache AS cache
+                    INNER JOIN wesense_respiro.device_region_cache AS cache FINAL
                         ON dev.device_id = cache.device_id
                     INNER JOIN wesense_respiro.region_boundaries AS rb
                         ON rb.region_id = cache.${regionColumn}
@@ -618,7 +622,7 @@ class RegionService {
                         count(*) as sensor_count,
                         max(dev.latest_timestamp) as latest_timestamp
                     FROM device_data AS dev
-                    INNER JOIN wesense_respiro.device_region_cache AS cache
+                    INNER JOIN wesense_respiro.device_region_cache AS cache FINAL
                         ON dev.device_id = cache.device_id
                     INNER JOIN wesense_respiro.region_boundaries AS rb
                         ON rb.region_id = cache.${regionColumn}
@@ -742,7 +746,7 @@ class RegionService {
                     count(*) as sensor_count,
                     max(dev.latest_timestamp) as latest_timestamp
                 FROM device_data AS dev
-                INNER JOIN wesense_respiro.device_region_cache AS cache
+                INNER JOIN wesense_respiro.device_region_cache AS cache FINAL
                     ON dev.device_id = cache.device_id
                 WHERE cache.${regionColumn} = {regionId:String}
             `;
@@ -798,11 +802,14 @@ class RegionService {
                     cl.lat,
                     cl.lon
                 FROM current_locations cl
-                LEFT JOIN wesense_respiro.device_region_cache cache
+                LEFT JOIN wesense_respiro.device_region_cache AS cache FINAL
                     ON cl.device_id = cache.device_id
                 WHERE cache.device_id IS NULL
                    OR abs(cl.lat - cache.latitude) > 0.001
                    OR abs(cl.lon - cache.longitude) > 0.001
+                   -- Re-check devices with empty region IDs (boundaries may not
+                   -- have been loaded when the device was first cached)
+                   OR (cache.region_adm0_id = '' AND cache.region_adm1_id = '')
             `;
 
             const result = await this.clickhouse.query({
@@ -911,7 +918,7 @@ class RegionService {
                     countIf(region_adm4_id != '') as with_adm4,
                     min(updated_at) as oldest_entry,
                     max(updated_at) as newest_entry
-                FROM wesense_respiro.device_region_cache
+                FROM wesense_respiro.device_region_cache FINAL
             `;
             const result = await this.clickhouse.query({ query, format: 'JSONEachRow' });
             const rows = await result.json();
@@ -988,7 +995,7 @@ class RegionService {
                     countIf(region_adm3_id LIKE '%_ADM4_%') as adm4_in_adm3,
                     countIf(region_adm2_id LIKE '%_ADM3_%') as adm3_in_adm2,
                     countIf(region_adm1_id LIKE '%_ADM2_%') as adm2_in_adm1
-                FROM wesense_respiro.device_region_cache
+                FROM wesense_respiro.device_region_cache FINAL
             `;
             const result = await this.clickhouse.query({ query: checkQuery, format: 'JSONEachRow' });
             const rows = await result.json();
@@ -1119,7 +1126,7 @@ class RegionService {
                         (rb.bbox_min_lon + rb.bbox_max_lon) / 2 as center_lon,
                         count(*) as sensor_count
                     FROM active_devices AS dev
-                    INNER JOIN wesense_respiro.device_region_cache AS cache
+                    INNER JOIN wesense_respiro.device_region_cache AS cache FINAL
                         ON dev.device_id = cache.device_id
                     INNER JOIN wesense_respiro.region_boundaries AS rb
                         ON rb.region_id = cache.${regionColumn}
@@ -1194,7 +1201,7 @@ class RegionService {
                         (rb.bbox_min_lon + rb.bbox_max_lon) / 2 as center_lon,
                         uniqExact(sr.device_id, sr.reading_type) as sensor_count
                     FROM wesense.sensor_readings AS sr
-                    INNER JOIN wesense_respiro.device_region_cache AS cache
+                    INNER JOIN wesense_respiro.device_region_cache AS cache FINAL
                         ON sr.device_id = cache.device_id
                     INNER JOIN wesense_respiro.region_boundaries AS rb
                         ON rb.region_id = cache.${regionColumn}
@@ -1256,7 +1263,7 @@ class RegionService {
                         (rb.bbox_min_lon + rb.bbox_max_lon) / 2 as center_lon,
                         uniqExact(sr.reading_type) as type_count
                     FROM wesense.sensor_readings AS sr
-                    INNER JOIN wesense_respiro.device_region_cache AS cache
+                    INNER JOIN wesense_respiro.device_region_cache AS cache FINAL
                         ON sr.device_id = cache.device_id
                     INNER JOIN wesense_respiro.region_boundaries AS rb
                         ON rb.region_id = cache.${regionColumn}
@@ -1363,7 +1370,7 @@ class RegionService {
                         countIf(sr.reading_type = 'pm10') as pm10_count,
                         countIf(sr.reading_type = 'nox_index') as nox_count
                     FROM wesense.sensor_readings AS sr
-                    INNER JOIN wesense_respiro.device_region_cache AS cache
+                    INNER JOIN wesense_respiro.device_region_cache AS cache FINAL
                         ON sr.device_id = cache.device_id
                     WHERE sr.reading_type IN ('pm2_5', 'pm10', 'nox_index')
                       AND sr.timestamp > now() - INTERVAL 365 DAY
@@ -1456,7 +1463,7 @@ class RegionService {
                         countIf(sr.reading_type = 'voc_index') as voc_count,
                         countIf(sr.reading_type = 'co2') as co2_count
                     FROM wesense.sensor_readings AS sr
-                    INNER JOIN wesense_respiro.device_region_cache AS cache
+                    INNER JOIN wesense_respiro.device_region_cache AS cache FINAL
                         ON sr.device_id = cache.device_id
                     WHERE sr.reading_type IN ('voc_index', 'co2')
                       AND sr.timestamp > now() - INTERVAL 365 DAY
@@ -1526,7 +1533,7 @@ class RegionService {
                         countIf(sr.reading_type = 'temperature') as temp_readings,
                         countIf(sr.reading_type = 'humidity') as humidity_readings
                     FROM wesense.sensor_readings AS sr
-                    INNER JOIN wesense_respiro.device_region_cache AS cache
+                    INNER JOIN wesense_respiro.device_region_cache AS cache FINAL
                         ON sr.device_id = cache.device_id
                     WHERE sr.reading_type IN ('temperature', 'humidity')
                       AND sr.timestamp > now() - INTERVAL 30 DAY
@@ -1600,7 +1607,7 @@ class RegionService {
                         stddevPop(sr.value) as temp_stddev,
                         count(*) as readings
                     FROM wesense.sensor_readings AS sr
-                    INNER JOIN wesense_respiro.device_region_cache AS cache
+                    INNER JOIN wesense_respiro.device_region_cache AS cache FINAL
                         ON sr.device_id = cache.device_id
                     WHERE sr.reading_type = 'temperature'
                       AND sr.timestamp > now() - INTERVAL 30 DAY
@@ -1660,7 +1667,7 @@ class RegionService {
                         avg(sr.value) as avg_temp,
                         count(*) as readings
                     FROM wesense.sensor_readings AS sr
-                    INNER JOIN wesense_respiro.device_region_cache AS cache
+                    INNER JOIN wesense_respiro.device_region_cache AS cache FINAL
                         ON sr.device_id = cache.device_id
                     WHERE sr.reading_type = 'temperature'
                       AND sr.timestamp > now() - INTERVAL 30 DAY
@@ -1812,7 +1819,7 @@ class RegionService {
                     dl.avg_value,
                     dl.latest_timestamp
                 FROM device_locations AS dl
-                INNER JOIN wesense_respiro.device_region_cache AS cache
+                INNER JOIN wesense_respiro.device_region_cache AS cache FINAL
                     ON dl.device_id = cache.device_id
                 LEFT JOIN device_classifications AS dc
                     ON dl.device_id = dc.device_id
