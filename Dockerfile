@@ -1,6 +1,6 @@
 # Stage 1: Build tippecanoe from source
 # Needed to generate PMTiles boundary overlays for the region heatmap
-FROM node:20-slim AS tippecanoe-builder
+FROM node:22-slim AS tippecanoe-builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     g++ make libsqlite3-dev zlib1g-dev git ca-certificates \
@@ -13,7 +13,7 @@ RUN git clone --depth 1 --branch ${TIPPECANOE_VERSION} \
     && make -j$(nproc)
 
 # Stage 2: Download pmtiles CLI (pre-built Go binary)
-FROM node:20-slim AS pmtiles-downloader
+FROM node:22-slim AS pmtiles-downloader
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl ca-certificates \
@@ -26,7 +26,7 @@ RUN ARCH=$(case "${TARGETARCH}" in (amd64) echo "x86_64";; (arm64) echo "arm64";
     | tar -xz -C /usr/local/bin pmtiles
 
 # Stage 3: Production image
-FROM node:20-slim
+FROM node:22-slim
 
 # Runtime libraries needed by tippecanoe + tools for boundary setup
 RUN apt-get update && apt-get install -y --no-install-recommends \
