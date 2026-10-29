@@ -654,6 +654,8 @@ app.use(compression({
     }
 }));
 app.use(express.json());
+// Express 5 leaves req.body undefined when no body is sent; keep the Express 4 behaviour.
+app.use((req, res, next) => { req.body ??= {}; next(); });
 
 // Serve vector tiles from PMTiles archive as individual tile responses.
 // Reverse proxies (nginx/SWAG/Caddy) corrupt PMTiles HTTP range requests by
