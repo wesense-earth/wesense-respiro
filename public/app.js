@@ -6993,8 +6993,9 @@ class Respiro {
         this.setupViewerTracking();
         this.setupDetailsSidebar();  // Initialize details sidebar
         this.setupDashboardTimeRange();  // Dashboard time range selector
+        // Draw the starting view now (it fetches its own data), not after the map's sensors load
+        this.switchView(this.initialView);
         this.loadSensors();
-        this.loadAllSensorsForAging();  // Load all sensors for aging distribution
         this.loadLeaderboard();  // Load ADM2 leaderboard data
         this.loadEnvLeaderboard();  // Load environmental leaderboard data
         this.startAutoRefresh();
@@ -9755,10 +9756,11 @@ class Respiro {
             this.updateSidebar();
             this.updateStats();
 
-            // Update dashboard if it's currently visible
-            if (document.getElementById('dashboardView').classList.contains('active')) {
+            // Refresh the dashboard if it's visible (init() draws it the first time)
+            if (this._sensorsLoadedOnce && document.getElementById('dashboardView').classList.contains('active')) {
                 this.renderDashboard();
             }
+            this._sensorsLoadedOnce = true;
 
             // Load historical data (updates the "Last heard within X" message)
             await this.loadHistoricalData();
@@ -10397,7 +10399,9 @@ class Respiro {
         // Refresh every 60 seconds
         this.refreshInterval = setInterval(() => this.loadSensors(), 60000);
         // Refresh aging data every 5 minutes (less frequent since it's 30d data)
-        this.agingRefreshInterval = setInterval(() => this.loadAllSensorsForAging(), 300000);
+        this.agingRefreshInterval = setInterval(() => {
+            if (document.getElementById('statsView').classList.contains('active')) this.loadAllSensorsForAging();
+        }, 300000);
         // Refresh leaderboard every 5 minutes (24h data, doesn't change frequently)
         this.leaderboardRefreshInterval = setInterval(() => this.loadLeaderboard(), 300000);
     }
@@ -12014,8 +12018,10 @@ class Respiro {
         // Supports #map, #dashboard, #stats and optional params e.g. #map&zoom=3
         const hashParts = window.location.hash.replace('#', '').split('&');
         const hashView = hashParts[0];
+        // The starting view is drawn by init() once every component exists
+        this.initialView = document.querySelector('.nav-tab.active').dataset.view;
         if (hashView && ['map', 'dashboard', 'stats'].includes(hashView)) {
-            this.switchView(hashView);
+            this.initialView = hashView;
             navTabs.forEach(t => {
                 t.classList.toggle('active', t.dataset.view === hashView);
             });
@@ -12058,6 +12064,8 @@ class Respiro {
             } else if (view === 'stats') {
                 document.getElementById('statsView').classList.add('active');
                 this.loadStats();
+                // 30 days of every sensor (~2.7 MB), only needed for the Stats aging chart
+                if (this.allSensorsForAging.length === 0) this.loadAllSensorsForAging();
             }
         }
     }
