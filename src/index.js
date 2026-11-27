@@ -763,290 +763,340 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, '../public/index.html'));
 });
 
-app.get('/api/sensors', async (req, res) => {
-    try {
-        // Respect the requested time range - only show sensors with data in that period
-        // The dashboard has separate logic for showing stale sensors
-        const timeRange = req.query.range || '24h';
-        const rawData = await clickHouseClient.queryAverageData(timeRange);
+// Time window of network data used for swarm (H3 cell) statistics when a
+// request asks for specific devices. Only fresh sensors count towards a swarm
+// (longest freshness threshold is ~1 hour); the window also sets which recent
+// peers are listed in swarm_sensors.
+const SWARM_POOL_RANGE = '24h';
 
-        // rawData: { deviceId: { latitude, longitude, geo_country, geo_subdivision, node_name, readings: {...} }, ... }
+/**
+ * Build the /api/sensors response.
+ * @param {Object} poolData - sensors used to compute swarm (H3 cell) statistics
+ * @param {Object} outputData - sensors to return; may be the same object as poolData
+ * Both are { deviceId: { latitude, longitude, geo_country, geo_subdivision, node_name, readings: {...} }, ... }
+ */
+function buildSensorResponse(poolData, outputData) {
 
-        // Helper to get the latest timestamp from a sensor's readings
-        const getLatestTimestamp = (readings) => {
-            if (!readings) return null;
-            let latest = null;
-            for (const reading of Object.values(readings)) {
-                if (reading.timestamp) {
-                    const ts = new Date(reading.timestamp).getTime();
-                    if (!latest || ts > latest) latest = ts;
-                }
+    // Helper to get the latest timestamp from a sensor's readings
+    const getLatestTimestamp = (readings) => {
+        if (!readings) return null;
+        let latest = null;
+        for (const reading of Object.values(readings)) {
+            if (reading.timestamp) {
+                const ts = new Date(reading.timestamp).getTime();
+                if (!latest || ts > latest) latest = ts;
             }
-            return latest ? new Date(latest).toISOString() : null;
+        }
+        return latest ? new Date(latest).toISOString() : null;
+    };
+
+    // Step 1: Calculate H3 cell for each sensor and group FRESH sensors by cell
+    // Separate groupings for different metrics:
+    // - Temperature/Humidity: OUTDOOR sensors only
+    // - Pressure: Indoor + Outdoor OK (pressure is uniform regardless of building envelope)
+    const h3CellOutdoorSensors = {};  // h3Index -> array of FRESH OUTDOOR sensors (for temp/humidity)
+    const h3CellAllFreshSensors = {}; // h3Index -> array of ALL FRESH sensors (for pressure)
+    const h3CellAllSensors = {}; // h3Index -> array of ALL sensors (for display purposes)
+    const sensorH3Cells = {}; // deviceId -> h3Index
+    const sensorFreshness = {}; // deviceId -> { isFresh, timestamp }
+
+    Object.entries(poolData).forEach(([deviceId, data]) => {
+        if (data.latitude && data.longitude) {
+            try {
+                const h3Index = h3.latLngToCell(data.latitude, data.longitude, H3_RESOLUTION);
+                sensorH3Cells[deviceId] = h3Index;
+
+                // Check freshness
+                const latestTs = getLatestTimestamp(data.readings);
+                const fresh = isSensorFresh(latestTs, data.data_source);
+                sensorFreshness[deviceId] = { isFresh: fresh, timestamp: latestTs };
+
+                // Treat 'mixed' same as 'outdoor' for swarm calculations
+                // Mixed sensors are typically in semi-outdoor environments (garages, covered areas, etc.)
+                const isOutdoor = data.deployment_type === 'outdoor' || data.deployment_type === 'mixed';
+
+                // Track all sensors in cell (for display)
+                if (!h3CellAllSensors[h3Index]) {
+                    h3CellAllSensors[h3Index] = [];
+                }
+                h3CellAllSensors[h3Index].push({ deviceId, ...data, _isFresh: fresh, _latestTs: latestTs, _isOutdoor: isOutdoor });
+
+                // Only fresh sensors participate in swarm calculations
+                if (fresh) {
+                    // All fresh sensors can contribute to pressure
+                    if (!h3CellAllFreshSensors[h3Index]) {
+                        h3CellAllFreshSensors[h3Index] = [];
+                    }
+                    h3CellAllFreshSensors[h3Index].push({ deviceId, ...data, _isOutdoor: isOutdoor });
+
+                    // Only outdoor sensors contribute to temp/humidity
+                    if (isOutdoor) {
+                        if (!h3CellOutdoorSensors[h3Index]) {
+                            h3CellOutdoorSensors[h3Index] = [];
+                        }
+                        h3CellOutdoorSensors[h3Index].push({ deviceId, ...data });
+                    }
+                }
+            } catch (e) {
+                // Invalid coordinates, skip H3 assignment
+            }
+        }
+    });
+
+    // Step 2: Calculate swarm statistics (median, outliers) for each H3 cell
+    // Use different sensor pools per metric type
+    const h3CellStats = {};  // h3Index -> { temperature: {...}, humidity: {...}, pressure: {...} }
+    const outlierDeviceIds = new Set();  // Track all outlier device IDs
+
+    // Get all unique H3 cells
+    const allH3Cells = new Set([
+        ...Object.keys(h3CellOutdoorSensors),
+        ...Object.keys(h3CellAllFreshSensors)
+    ]);
+
+    allH3Cells.forEach(h3Index => {
+        const outdoorSensors = h3CellOutdoorSensors[h3Index] || [];
+        const allFreshSensors = h3CellAllFreshSensors[h3Index] || [];
+
+        h3CellStats[h3Index] = {
+            // Outdoor sensor counts for temp/humidity
+            outdoor_count: outdoorSensors.length,
+            // All fresh sensor count for pressure
+            all_fresh_count: allFreshSensors.length
         };
 
-        // Step 1: Calculate H3 cell for each sensor and group FRESH sensors by cell
-        // Separate groupings for different metrics:
-        // - Temperature/Humidity: OUTDOOR sensors only
-        // - Pressure: Indoor + Outdoor OK (pressure is uniform regardless of building envelope)
-        const h3CellOutdoorSensors = {};  // h3Index -> array of FRESH OUTDOOR sensors (for temp/humidity)
-        const h3CellAllFreshSensors = {}; // h3Index -> array of ALL FRESH sensors (for pressure)
-        const h3CellAllSensors = {}; // h3Index -> array of ALL sensors (for display purposes)
-        const sensorH3Cells = {}; // deviceId -> h3Index
-        const sensorFreshness = {}; // deviceId -> { isFresh, timestamp }
-
-        Object.entries(rawData).forEach(([deviceId, data]) => {
-            if (data.latitude && data.longitude) {
-                try {
-                    const h3Index = h3.latLngToCell(data.latitude, data.longitude, H3_RESOLUTION);
-                    sensorH3Cells[deviceId] = h3Index;
-
-                    // Check freshness
-                    const latestTs = getLatestTimestamp(data.readings);
-                    const fresh = isSensorFresh(latestTs, data.data_source);
-                    sensorFreshness[deviceId] = { isFresh: fresh, timestamp: latestTs };
-
-                    // Treat 'mixed' same as 'outdoor' for swarm calculations
-                    // Mixed sensors are typically in semi-outdoor environments (garages, covered areas, etc.)
-                    const isOutdoor = data.deployment_type === 'outdoor' || data.deployment_type === 'mixed';
-
-                    // Track all sensors in cell (for display)
-                    if (!h3CellAllSensors[h3Index]) {
-                        h3CellAllSensors[h3Index] = [];
-                    }
-                    h3CellAllSensors[h3Index].push({ deviceId, ...data, _isFresh: fresh, _latestTs: latestTs, _isOutdoor: isOutdoor });
-
-                    // Only fresh sensors participate in swarm calculations
-                    if (fresh) {
-                        // All fresh sensors can contribute to pressure
-                        if (!h3CellAllFreshSensors[h3Index]) {
-                            h3CellAllFreshSensors[h3Index] = [];
-                        }
-                        h3CellAllFreshSensors[h3Index].push({ deviceId, ...data, _isOutdoor: isOutdoor });
-
-                        // Only outdoor sensors contribute to temp/humidity
-                        if (isOutdoor) {
-                            if (!h3CellOutdoorSensors[h3Index]) {
-                                h3CellOutdoorSensors[h3Index] = [];
-                            }
-                            h3CellOutdoorSensors[h3Index].push({ deviceId, ...data });
-                        }
-                    }
-                } catch (e) {
-                    // Invalid coordinates, skip H3 assignment
-                }
+        // Temperature: outdoor only, needs 5+ outdoor sensors
+        if (outdoorSensors.length >= MIN_SWARM_SIZE) {
+            const stats = calculateSwarmStats(outdoorSensors, 'temperature');
+            if (stats) {
+                h3CellStats[h3Index].temperature = stats;
+                stats.outlier_device_ids.forEach(id => outlierDeviceIds.add(id));
             }
-        });
-
-        // Step 2: Calculate swarm statistics (median, outliers) for each H3 cell
-        // Use different sensor pools per metric type
-        const h3CellStats = {};  // h3Index -> { temperature: {...}, humidity: {...}, pressure: {...} }
-        const outlierDeviceIds = new Set();  // Track all outlier device IDs
-
-        // Get all unique H3 cells
-        const allH3Cells = new Set([
-            ...Object.keys(h3CellOutdoorSensors),
-            ...Object.keys(h3CellAllFreshSensors)
-        ]);
-
-        allH3Cells.forEach(h3Index => {
-            const outdoorSensors = h3CellOutdoorSensors[h3Index] || [];
-            const allFreshSensors = h3CellAllFreshSensors[h3Index] || [];
-
-            h3CellStats[h3Index] = {
-                // Outdoor sensor counts for temp/humidity
-                outdoor_count: outdoorSensors.length,
-                // All fresh sensor count for pressure
-                all_fresh_count: allFreshSensors.length
-            };
-
-            // Temperature: outdoor only, needs 5+ outdoor sensors
-            if (outdoorSensors.length >= MIN_SWARM_SIZE) {
-                const stats = calculateSwarmStats(outdoorSensors, 'temperature');
-                if (stats) {
-                    h3CellStats[h3Index].temperature = stats;
-                    stats.outlier_device_ids.forEach(id => outlierDeviceIds.add(id));
-                }
-            }
-
-            // Humidity: outdoor only, needs 5+ outdoor sensors
-            if (outdoorSensors.length >= MIN_SWARM_SIZE) {
-                const stats = calculateSwarmStats(outdoorSensors, 'humidity');
-                if (stats) {
-                    h3CellStats[h3Index].humidity = stats;
-                    stats.outlier_device_ids.forEach(id => outlierDeviceIds.add(id));
-                }
-            }
-
-            // Pressure: indoor + outdoor, needs 5+ total fresh sensors
-            if (allFreshSensors.length >= MIN_SWARM_SIZE) {
-                const stats = calculateSwarmStats(allFreshSensors, 'pressure');
-                if (stats) {
-                    h3CellStats[h3Index].pressure = stats;
-                    stats.outlier_device_ids.forEach(id => outlierDeviceIds.add(id));
-                }
-            }
-        });
-
-        // Step 3: Build sensor list with swarm data and outlier flags
-        const sensors = Object.entries(rawData).map(([deviceId, data]) => {
-            const h3Index = sensorH3Cells[deviceId];
-            const cellStats = h3Index ? h3CellStats[h3Index] : null;
-            const isOutdoor = data.deployment_type === 'outdoor' || data.deployment_type === 'mixed';
-
-            // Calculate swarm sizes per metric type
-            // Temperature/Humidity: outdoor sensors only
-            // Pressure: all fresh sensors (indoor + outdoor)
-            const outdoorSwarmSize = cellStats?.outdoor_count || 0;
-            const pressureSwarmSize = cellStats?.all_fresh_count || 0;
-
-            // Per-metric swarm info for frontend
-            const swarmSizes = {
-                temperature: outdoorSwarmSize,
-                humidity: outdoorSwarmSize,
-                pressure: pressureSwarmSize
-            };
-
-            // Determine overall swarm status based on the BEST metric for this sensor
-            // For outdoor sensors: consider temp/humidity/pressure
-            // For indoor sensors: only pressure can give swarm status
-            let bestSwarmSize = isOutdoor
-                ? Math.max(outdoorSwarmSize, pressureSwarmSize)
-                : pressureSwarmSize;
-
-            let swarmStatus = 'shield';
-            let swarmIcon = '🛡️';
-            if (bestSwarmSize >= 7) {
-                swarmStatus = 'super_swarm';
-                swarmIcon = '⭐';
-            } else if (bestSwarmSize >= 5) {
-                swarmStatus = 'swarm';
-                swarmIcon = '🐝';
-            }
-
-            // Check if this sensor is an outlier for any metric
-            const isOutlier = outlierDeviceIds.has(deviceId);
-            const outlierMetrics = [];
-            if (isOutlier && cellStats) {
-                ['temperature', 'humidity', 'pressure'].forEach(metric => {
-                    if (cellStats[metric]?.outlier_device_ids?.includes(deviceId)) {
-                        outlierMetrics.push(metric);
-                    }
-                });
-            }
-
-            // Build list of OTHER sensors in the same swarm (for sidebar display)
-            // Show all sensors in the cell with their freshness and deployment type
-            let swarmSensors = null;
-            const allCellSensors = h3Index ? h3CellAllSensors[h3Index] : [];
-            // Show peers if ANY metric has swarm (5+)
-            const hasAnySwarm = outdoorSwarmSize >= MIN_SWARM_SIZE || pressureSwarmSize >= MIN_SWARM_SIZE;
-            if (hasAnySwarm && allCellSensors.length > 0) {
-                swarmSensors = allCellSensors
-                    .filter(s => s.deviceId !== deviceId)  // Exclude self
-                    .map(s => ({
-                        deviceId: s.deviceId,
-                        name: s.node_name || s.deployment_location || s.deviceId,
-                        readings: {
-                            temperature: s.readings?.temperature?.value,
-                            humidity: s.readings?.humidity?.value,
-                            pressure: s.readings?.pressure?.value
-                        },
-                        is_outlier: outlierDeviceIds.has(s.deviceId),
-                        is_fresh: s._isFresh,
-                        is_outdoor: s._isOutdoor,
-                        timestamp: s._latestTs,
-                        data_source: s.data_source,
-                        deployment_type: s.deployment_type
-                    }));
-            }
-
-            // Get this sensor's freshness info
-            const freshInfo = sensorFreshness[deviceId] || { isFresh: false, timestamp: null };
-
-            return {
-                deviceId: deviceId,
-                name: data.node_name || data.deployment_location || deviceId,
-                latitude: data.latitude,
-                longitude: data.longitude,
-                country: data.geo_country,
-                subdivision: data.geo_subdivision,
-                locality: data.deployment_location,
-                readings: data.readings || {},
-                board_model: data.board_model,
-                data_source: data.data_source,
-                deployment_type: data.deployment_type,
-                // Freshness info
-                is_fresh: freshInfo.isFresh,
-                latest_timestamp: freshInfo.timestamp,
-                // Swarm data (overall best for this sensor)
-                h3_cell: h3Index || null,
-                swarm_size: bestSwarmSize,
-                swarm_status: swarmStatus,
-                swarm_icon: swarmIcon,
-                // Per-metric swarm sizes (for frontend to show per-card status)
-                // Temperature/Humidity: outdoor sensors only
-                // Pressure: indoor + outdoor
-                swarm_sizes: swarmSizes,
-                // Outlier detection (only for sensors in 5+ swarms)
-                is_outlier: isOutlier,
-                outlier_metrics: outlierMetrics,
-                // Swarm medians (for sensors in verified swarms, per metric)
-                swarm_medians: cellStats ? {
-                    temperature: cellStats.temperature?.median,
-                    humidity: cellStats.humidity?.median,
-                    pressure: cellStats.pressure?.median
-                } : null,
-                // Other sensors in the same swarm (for sidebar display)
-                swarm_sensors: swarmSensors
-            };
-        });
-
-        console.log(`Fetched ${sensors.length} sensors from ClickHouse`);
-
-        // Debug: Log specific sensors if present
-        const debugIds = ['!e2e5a154', '!0b9ca93f'];
-        debugIds.forEach(id => {
-            const sensor = sensors.find(s => s.deviceId === id);
-            if (sensor) {
-                console.log(`  DEBUG ${id}: h3=${sensor.h3_cell}, fresh=${sensor.is_fresh}, swarm_size=${sensor.swarm_size}, sizes=${JSON.stringify(sensor.swarm_sizes)}`);
-            } else {
-                // Check if it exists in rawData but wasn't included
-                const rawSensor = rawData[id];
-                if (rawSensor) {
-                    const h3 = sensorH3Cells[id];
-                    const fresh = sensorFreshness[id];
-                    console.log(`  DEBUG ${id}: h3=${h3}, fresh=${fresh?.isFresh}, not in sensors list`);
-                } else {
-                    console.log(`  DEBUG ${id}: not found in rawData (no data in time range)`);
-                }
-            }
-        });
-
-        // Log swarm statistics
-        const outdoorVerifiedCells = Object.values(h3CellStats).filter(s => s.outdoor_count >= MIN_SWARM_SIZE).length;
-        const pressureVerifiedCells = Object.values(h3CellStats).filter(s => s.all_fresh_count >= MIN_SWARM_SIZE).length;
-        const swarmStats = {
-            total: sensors.length,
-            shield: sensors.filter(s => s.swarm_status === 'shield').length,
-            swarm: sensors.filter(s => s.swarm_status === 'swarm').length,
-            super_swarm: sensors.filter(s => s.swarm_status === 'super_swarm').length,
-            unique_cells: Object.keys(h3CellAllSensors).length,
-            outdoor_verified_cells: outdoorVerifiedCells,
-            pressure_verified_cells: pressureVerifiedCells,
-            outlier_count: outlierDeviceIds.size
-        };
-        console.log(`  Swarm stats: ${swarmStats.shield} shield, ${swarmStats.swarm} swarm, ${swarmStats.super_swarm} super swarm`);
-        console.log(`  H3 cells: ${swarmStats.unique_cells} total`);
-        console.log(`  Verified cells: ${outdoorVerifiedCells} outdoor (temp/humidity), ${pressureVerifiedCells} pressure (indoor+outdoor)`);
-        if (swarmStats.outlier_count > 0) {
-            console.log(`  Outliers detected: ${swarmStats.outlier_count} sensors`);
         }
 
-        return res.json({ sensors, swarm_stats: swarmStats });
+        // Humidity: outdoor only, needs 5+ outdoor sensors
+        if (outdoorSensors.length >= MIN_SWARM_SIZE) {
+            const stats = calculateSwarmStats(outdoorSensors, 'humidity');
+            if (stats) {
+                h3CellStats[h3Index].humidity = stats;
+                stats.outlier_device_ids.forEach(id => outlierDeviceIds.add(id));
+            }
+        }
+
+        // Pressure: indoor + outdoor, needs 5+ total fresh sensors
+        if (allFreshSensors.length >= MIN_SWARM_SIZE) {
+            const stats = calculateSwarmStats(allFreshSensors, 'pressure');
+            if (stats) {
+                h3CellStats[h3Index].pressure = stats;
+                stats.outlier_device_ids.forEach(id => outlierDeviceIds.add(id));
+            }
+        }
+    });
+
+    // Step 2b: Locate requested devices that are not in the swarm pool
+    // (e.g. a favourite that has not reported within the pool window).
+    // They are never fresh, so they only need their cell and timestamp.
+    Object.entries(outputData).forEach(([deviceId, data]) => {
+        if (sensorH3Cells[deviceId] || !data.latitude || !data.longitude) return;
+        try {
+            sensorH3Cells[deviceId] = h3.latLngToCell(data.latitude, data.longitude, H3_RESOLUTION);
+        } catch (e) {
+            return; // Invalid coordinates, skip H3 assignment
+        }
+        const latestTs = getLatestTimestamp(data.readings);
+        sensorFreshness[deviceId] = { isFresh: isSensorFresh(latestTs, data.data_source), timestamp: latestTs };
+    });
+
+    // Step 3: Build sensor list with swarm data and outlier flags
+    const sensors = Object.entries(outputData).map(([deviceId, data]) => {
+        const h3Index = sensorH3Cells[deviceId];
+        const cellStats = h3Index ? h3CellStats[h3Index] : null;
+        const isOutdoor = data.deployment_type === 'outdoor' || data.deployment_type === 'mixed';
+
+        // Calculate swarm sizes per metric type
+        // Temperature/Humidity: outdoor sensors only
+        // Pressure: all fresh sensors (indoor + outdoor)
+        const outdoorSwarmSize = cellStats?.outdoor_count || 0;
+        const pressureSwarmSize = cellStats?.all_fresh_count || 0;
+
+        // Per-metric swarm info for frontend
+        const swarmSizes = {
+            temperature: outdoorSwarmSize,
+            humidity: outdoorSwarmSize,
+            pressure: pressureSwarmSize
+        };
+
+        // Determine overall swarm status based on the BEST metric for this sensor
+        // For outdoor sensors: consider temp/humidity/pressure
+        // For indoor sensors: only pressure can give swarm status
+        let bestSwarmSize = isOutdoor
+            ? Math.max(outdoorSwarmSize, pressureSwarmSize)
+            : pressureSwarmSize;
+
+        let swarmStatus = 'shield';
+        let swarmIcon = '🛡️';
+        if (bestSwarmSize >= 7) {
+            swarmStatus = 'super_swarm';
+            swarmIcon = '⭐';
+        } else if (bestSwarmSize >= 5) {
+            swarmStatus = 'swarm';
+            swarmIcon = '🐝';
+        }
+
+        // Check if this sensor is an outlier for any metric
+        const isOutlier = outlierDeviceIds.has(deviceId);
+        const outlierMetrics = [];
+        if (isOutlier && cellStats) {
+            ['temperature', 'humidity', 'pressure'].forEach(metric => {
+                if (cellStats[metric]?.outlier_device_ids?.includes(deviceId)) {
+                    outlierMetrics.push(metric);
+                }
+            });
+        }
+
+        // Build list of OTHER sensors in the same swarm (for sidebar display)
+        // Show all sensors in the cell with their freshness and deployment type
+        let swarmSensors = null;
+        const allCellSensors = h3Index ? h3CellAllSensors[h3Index] : [];
+        // Show peers if ANY metric has swarm (5+)
+        const hasAnySwarm = outdoorSwarmSize >= MIN_SWARM_SIZE || pressureSwarmSize >= MIN_SWARM_SIZE;
+        if (hasAnySwarm && allCellSensors.length > 0) {
+            swarmSensors = allCellSensors
+                .filter(s => s.deviceId !== deviceId)  // Exclude self
+                .map(s => ({
+                    deviceId: s.deviceId,
+                    name: s.node_name || s.deployment_location || s.deviceId,
+                    readings: {
+                        temperature: s.readings?.temperature?.value,
+                        humidity: s.readings?.humidity?.value,
+                        pressure: s.readings?.pressure?.value
+                    },
+                    is_outlier: outlierDeviceIds.has(s.deviceId),
+                    is_fresh: s._isFresh,
+                    is_outdoor: s._isOutdoor,
+                    timestamp: s._latestTs,
+                    data_source: s.data_source,
+                    deployment_type: s.deployment_type
+                }));
+        }
+
+        // Get this sensor's freshness info
+        const freshInfo = sensorFreshness[deviceId] || { isFresh: false, timestamp: null };
+
+        return {
+            deviceId: deviceId,
+            name: data.node_name || data.deployment_location || deviceId,
+            latitude: data.latitude,
+            longitude: data.longitude,
+            country: data.geo_country,
+            subdivision: data.geo_subdivision,
+            locality: data.deployment_location,
+            readings: data.readings || {},
+            board_model: data.board_model,
+            data_source: data.data_source,
+            deployment_type: data.deployment_type,
+            // Freshness info
+            is_fresh: freshInfo.isFresh,
+            latest_timestamp: freshInfo.timestamp,
+            // Swarm data (overall best for this sensor)
+            h3_cell: h3Index || null,
+            swarm_size: bestSwarmSize,
+            swarm_status: swarmStatus,
+            swarm_icon: swarmIcon,
+            // Per-metric swarm sizes (for frontend to show per-card status)
+            // Temperature/Humidity: outdoor sensors only
+            // Pressure: indoor + outdoor
+            swarm_sizes: swarmSizes,
+            // Outlier detection (only for sensors in 5+ swarms)
+            is_outlier: isOutlier,
+            outlier_metrics: outlierMetrics,
+            // Swarm medians (for sensors in verified swarms, per metric)
+            swarm_medians: cellStats ? {
+                temperature: cellStats.temperature?.median,
+                humidity: cellStats.humidity?.median,
+                pressure: cellStats.pressure?.median
+            } : null,
+            // Other sensors in the same swarm (for sidebar display)
+            swarm_sensors: swarmSensors
+        };
+    });
+
+    console.log(`Fetched ${sensors.length} sensors from ClickHouse`);
+
+    // Debug: Log specific sensors if present
+    const debugIds = ['!e2e5a154', '!0b9ca93f'];
+    debugIds.forEach(id => {
+        const sensor = sensors.find(s => s.deviceId === id);
+        if (sensor) {
+            console.log(`  DEBUG ${id}: h3=${sensor.h3_cell}, fresh=${sensor.is_fresh}, swarm_size=${sensor.swarm_size}, sizes=${JSON.stringify(sensor.swarm_sizes)}`);
+        } else {
+            // Check if it exists in rawData but wasn't included
+            const rawSensor = poolData[id];
+            if (rawSensor) {
+                const h3 = sensorH3Cells[id];
+                const fresh = sensorFreshness[id];
+                console.log(`  DEBUG ${id}: h3=${h3}, fresh=${fresh?.isFresh}, not in sensors list`);
+            } else {
+                console.log(`  DEBUG ${id}: not found in rawData (no data in time range)`);
+            }
+        }
+    });
+
+    // Log swarm statistics
+    const outdoorVerifiedCells = Object.values(h3CellStats).filter(s => s.outdoor_count >= MIN_SWARM_SIZE).length;
+    const pressureVerifiedCells = Object.values(h3CellStats).filter(s => s.all_fresh_count >= MIN_SWARM_SIZE).length;
+    const swarmStats = {
+        total: sensors.length,
+        shield: sensors.filter(s => s.swarm_status === 'shield').length,
+        swarm: sensors.filter(s => s.swarm_status === 'swarm').length,
+        super_swarm: sensors.filter(s => s.swarm_status === 'super_swarm').length,
+        unique_cells: Object.keys(h3CellAllSensors).length,
+        outdoor_verified_cells: outdoorVerifiedCells,
+        pressure_verified_cells: pressureVerifiedCells,
+        outlier_count: outlierDeviceIds.size
+    };
+    console.log(`  Swarm stats: ${swarmStats.shield} shield, ${swarmStats.swarm} swarm, ${swarmStats.super_swarm} super swarm`);
+    console.log(`  H3 cells: ${swarmStats.unique_cells} total`);
+    console.log(`  Verified cells: ${outdoorVerifiedCells} outdoor (temp/humidity), ${pressureVerifiedCells} pressure (indoor+outdoor)`);
+    if (swarmStats.outlier_count > 0) {
+        console.log(`  Outliers detected: ${swarmStats.outlier_count} sensors`);
+    }
+
+    return { sensors, swarm_stats: swarmStats };
+}
+
+/**
+ * GET /api/sensors?range=24h        - every sensor with data in the range (map view)
+ * GET /api/sensors?devices=a,b,c    - latest all-time readings for just these devices,
+ *                                     with swarm stats from the last SWARM_POOL_RANGE (dashboard)
+ */
+app.get('/api/sensors', async (req, res) => {
+    try {
+        if (req.query.devices !== undefined) {
+            if (req.query.range !== undefined) {
+                return res.status(400).json({ error: 'Use either devices or range, not both' });
+            }
+            const deviceIds = req.query.devices.split(',').map(id => id.trim()).filter(Boolean);
+            if (deviceIds.length === 0) {
+                return res.status(400).json({ error: 'devices must list at least one device id' });
+            }
+            const [poolData, deviceData] = await Promise.all([
+                clickHouseClient.queryLatestSensors(SWARM_POOL_RANGE),
+                // Latest readings over all time (a favourite may have gone quiet),
+                // sparklines/trends from the last 24h
+                clickHouseClient.queryAverageData('all', deviceIds, '24h')
+            ]);
+            return res.json(buildSensorResponse(poolData, deviceData));
+        }
+
+        // Respect the requested time range - only show sensors with data in that period
+        const timeRange = req.query.range || '24h';
+        const rawData = await clickHouseClient.queryAverageData(timeRange);
+        return res.json(buildSensorResponse(rawData, rawData));
     } catch (error) {
         console.error('Error fetching sensors from ClickHouse:', error);
-        return res.json({ sensors: [] });
+        // Full error stays in the server log; ClickHouse messages can include query text and hosts
+        return res.status(500).json({ error: 'Failed to query sensors' });
     }
 });
 
