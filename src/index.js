@@ -770,12 +770,19 @@ app.get('/', (req, res) => {
 const SWARM_POOL_RANGE = '24h';
 
 // Network-wide results (every device's latest readings) are expensive to build
-// and change slowly, so each is built at most once per SHARED_RESULT_TTL_MS and
-// shared by every request: load stays the same however many people are viewing.
-// Requests arriving during a build wait for that build. A failed build is never
-// reused, so errors still reach the caller.
+// and change slowly, so each is shared by every request instead of being built
+// per request: load stays the same however many people are viewing.
+//
+// Freshness: a result is rebuilt once it is SHARED_RESULT_TTL_MS old. The rebuild
+// runs in the background while requests keep getting the current result, so no
+// visitor waits for a network-wide build unless there is no result yet or the
+// current one is older than SHARED_RESULT_MAX_AGE_MS. Results are therefore at
+// most SHARED_RESULT_MAX_AGE_MS old. A failed rebuild is logged; once the current
+// result passes the maximum age, requests get the error.
 const SHARED_RESULT_TTL_MS = 60 * 1000;
-const sharedResults = new Map(); // key -> { builtAt, promise }
+const SHARED_RESULT_MAX_AGE_MS = 3 * 60 * 1000;
+const SHARED_RESULT_IDLE_DROP_MS = 10 * 60 * 1000;
+const sharedResults = new Map(); // key -> { value, builtAt, building, usedAt }
 
 // Time ranges the app requests. Shared results are keyed by range, so the
 // range must come from this list: arbitrary values would each start a full
@@ -794,19 +801,38 @@ function sharedRange(req) {
 
 function sharedResult(key, build) {
     const now = Date.now();
-    const entry = sharedResults.get(key);
-    if (entry && now - entry.builtAt < SHARED_RESULT_TTL_MS) {
-        return entry.promise;
-    }
     for (const [k, e] of sharedResults) {
-        if (now - e.builtAt >= SHARED_RESULT_TTL_MS) sharedResults.delete(k);
+        if (now - e.usedAt > SHARED_RESULT_IDLE_DROP_MS && !e.building) sharedResults.delete(k);
     }
-    const promise = build();
-    sharedResults.set(key, { builtAt: now, promise });
-    promise.catch(() => {
-        if (sharedResults.get(key)?.promise === promise) sharedResults.delete(key);
-    });
-    return promise;
+    let entry = sharedResults.get(key);
+    if (!entry) {
+        entry = { value: undefined, builtAt: 0, building: null, usedAt: now };
+        sharedResults.set(key, entry);
+    }
+    entry.usedAt = now;
+    const age = now - entry.builtAt;
+    const hasValue = entry.value !== undefined;
+
+    if (hasValue && age < SHARED_RESULT_TTL_MS) {
+        return Promise.resolve(entry.value);
+    }
+    if (!entry.building) {
+        const building = build()
+            .then(value => {
+                entry.value = value;
+                entry.builtAt = Date.now();
+                return value;
+            })
+            .finally(() => {
+                if (entry.building === building) entry.building = null;
+            });
+        building.catch(err => console.error(`Shared result ${key}: rebuild failed: ${err.message}`));
+        entry.building = building;
+    }
+    if (hasValue && age < SHARED_RESULT_MAX_AGE_MS) {
+        return Promise.resolve(entry.value); // rebuilding in the background
+    }
+    return entry.building;
 }
 
 /**
