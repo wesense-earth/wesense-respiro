@@ -1632,13 +1632,19 @@
         }
 
         /* Main Navigation */
+        /* Header shared with wesense.earth and docs.wesense.earth: 64 px tall,
+           24 px sides, 32 px leaf mark, DM Sans wordmark and menu. Charcoal, as
+           the brand guide asks for behind the logo (and as the other sites
+           look in dark mode). */
         .main-nav {
-            background: linear-gradient(135deg, var(--accent-color) 0%, var(--accent-color-2) 100%);
+            background: #1A1A18;
             color: white;
             display: flex;
             align-items: center;
-            padding: 12px 24px; /* logo 24 px from the edge, as on wesense.earth and the docs */
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            height: 64px;
+            box-sizing: border-box;
+            padding: 0 24px;
+            border-bottom: 1px solid rgba(232, 228, 221, 0.08);
             z-index: 1000;
         }
 
@@ -1648,8 +1654,8 @@
         }
 
         .nav-brand img {
-            height: 28px;
-            width: auto;
+            height: 32px;
+            width: 32px;
         }
 
         /* Same wordmark as docs.wesense.earth and wesense.earth */
@@ -1659,7 +1665,7 @@
         }
 
         .nav-brand-name {
-            color: white;
+            color: #52B788; /* Fern: the brand wordmark colour on dark */
             font-family: 'DM Sans', system-ui, sans-serif;
             font-size: 18px;
             font-weight: 700;
@@ -1675,36 +1681,35 @@
 
         .nav-tabs {
             display: flex;
-            gap: 8px;
-            margin-left: 40px;
+            gap: 6px;
+            margin-left: 32px;
         }
 
         .nav-tab {
-            background: rgba(255,255,255,0.1);
+            background: rgba(82, 183, 136, 0.12);
             border: none;
-            color: rgba(255,255,255,0.8);
-            padding: 8px 20px;
+            color: #52B788;
+            height: 32px;
+            padding: 0 14px;
             border-radius: 4px;
             cursor: pointer;
             font-family: 'DM Sans', system-ui, sans-serif;
             font-size: 14px;
-            font-weight: 500;
+            font-weight: 600;
             transition: all 0.2s;
         }
 
         .nav-tab:hover {
-            background: rgba(255,255,255,0.2);
-            color: white;
+            background: rgba(82, 183, 136, 0.22);
         }
 
         .nav-tab.active {
-            background: rgba(255,255,255,0.25);
-            color: white;
-            font-weight: 600;
+            background: rgba(82, 183, 136, 0.3);
+            color: #B7E4C7;
         }
 
         .nav-separator {
-            color: rgba(255,255,255,0.3);
+            color: rgba(232, 228, 221, 0.2);
             font-size: 18px;
             font-weight: 300;
             margin: 0 4px;
@@ -1712,7 +1717,7 @@
         }
 
         .nav-site-separator {
-            margin: 0 8px 0 16px;
+            margin: 0 12px 0 16px;
         }
 
         /* wesense.earth sections, after the app views, as lighter text links */
@@ -1723,7 +1728,7 @@
         }
 
         .nav-site-links a {
-            color: rgba(255,255,255,0.75);
+            color: rgba(232, 228, 221, 0.8);
             text-decoration: none;
             font-family: 'DM Sans', system-ui, sans-serif;
             font-size: 14px;
@@ -7903,7 +7908,7 @@
     <!-- Main Navigation -->
     <nav class="main-nav">
         <a class="nav-brand" href="https://wesense.earth/" title="WeSense.earth home">
-            <img src="/logos/logo-solid-dark.png" alt="" />
+            <img src="/logos/logo-mark.png" alt="" />
             <span class="nav-brand-name">WeSense</span>
         </a>
         <div class="nav-tabs">
