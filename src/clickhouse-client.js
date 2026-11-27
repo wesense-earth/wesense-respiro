@@ -736,6 +736,8 @@ class ClickHouseClient {
      */
     _getBucketSize(timeRange) {
         const buckets = {
+            '10m': 60,       // 1 minute buckets (dashboard current-value refresh)
+            '30m': 60,       // 1 minute buckets
             '1h': 60,        // 1 minute buckets
             '2h': 120,       // 2 minute buckets
             '4h': 300,       // 5 minute buckets
@@ -746,6 +748,7 @@ class ClickHouseClient {
             '30d': 21600,    // 6 hour buckets
             '90d': 86400,    // 1 day buckets
             '1y': 259200,    // 3 day buckets
+            '365d': 259200,  // 3 day buckets
             'all': 604800    // 1 week buckets
         };
         return buckets[timeRange] || 1800;
