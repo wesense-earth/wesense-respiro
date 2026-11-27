@@ -777,11 +777,29 @@ const SWARM_POOL_RANGE = '24h';
 const SHARED_RESULT_TTL_MS = 60 * 1000;
 const sharedResults = new Map(); // key -> { builtAt, promise }
 
+// Time ranges the app requests. Shared results are keyed by range, so the
+// range must come from this list: arbitrary values would each start a full
+// network-wide build and add a cache entry.
+const SHARED_RANGES = new Set(['10m', '30m', '1h', '2h', '4h', '8h', '24h', '48h', '7d', '30d', '90d', '1y', '365d', 'all']);
+
+function sharedRange(req) {
+    const range = req.query.range || '24h';
+    if (!SHARED_RANGES.has(range)) {
+        const err = new Error(`range must be one of: ${[...SHARED_RANGES].join(', ')}`);
+        err.status = 400;
+        throw err;
+    }
+    return range;
+}
+
 function sharedResult(key, build) {
     const now = Date.now();
     const entry = sharedResults.get(key);
     if (entry && now - entry.builtAt < SHARED_RESULT_TTL_MS) {
         return entry.promise;
+    }
+    for (const [k, e] of sharedResults) {
+        if (now - e.builtAt >= SHARED_RESULT_TTL_MS) sharedResults.delete(k);
     }
     const promise = build();
     sharedResults.set(key, { builtAt: now, promise });
@@ -1112,13 +1130,14 @@ app.get('/api/sensors', async (req, res) => {
         }
 
         // Respect the requested time range - only show sensors with data in that period
-        const timeRange = req.query.range || '24h';
+        const timeRange = sharedRange(req);
         const response = await sharedResult(`sensors:${timeRange}`, async () => {
             const rawData = await clickHouseClient.queryAverageData(timeRange);
             return buildSensorResponse(rawData, rawData);
         });
         return res.json(response);
     } catch (error) {
+        if (error.status === 400) return res.status(400).json({ error: error.message });
         console.error('Error fetching sensors from ClickHouse:', error);
         // Full error stays in the server log; ClickHouse messages can include query text and hosts
         return res.status(500).json({ error: 'Failed to query sensors' });
@@ -1127,10 +1146,11 @@ app.get('/api/sensors', async (req, res) => {
 
 app.get('/api/sensors/average', async (req, res) => {
     try {
-        const timeRange = req.query.range || '24h';
+        const timeRange = sharedRange(req);
         const rawData = await sharedResult(`average:${timeRange}`, () => clickHouseClient.queryAverageData(timeRange));
         res.json(rawData);
     } catch (error) {
+        if (error.status === 400) return res.status(400).json({ error: error.message });
         console.error('Error fetching sensor averages:', error);
         res.status(500).json({ error: 'Failed to query sensor averages' });
     }
@@ -1225,7 +1245,7 @@ app.get('/api/prediction', async (req, res) => {
 
 app.get('/api/history/average', async (req, res) => {
     try {
-        const timeRange = req.query.range || '24h';
+        const timeRange = sharedRange(req);
         const rawData = await sharedResult(`average:${timeRange}`, () => clickHouseClient.queryAverageData(timeRange));
 
         // Transform to expected format, preserving sparklineData and trend
@@ -1247,6 +1267,7 @@ app.get('/api/history/average', async (req, res) => {
 
         res.json({ averageData, timeRange });
     } catch (error) {
+        if (error.status === 400) return res.status(400).json({ error: error.message });
         console.error('Error querying average:', error);
         res.status(500).json({ error: 'Failed to query average data' });
     }
