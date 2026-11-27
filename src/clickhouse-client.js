@@ -95,33 +95,38 @@ class ClickHouseClient {
         this._requireConnection();
 
         try {
-            const { whereClause, query_params } = this._buildReadingsWhere(timeRange, deviceIds);
-
-            // Get latest reading per device per reading_type, with location info
+            // Latest reading per device per reading_type from wesense.sensor_latest
+            // (migration 011): a few rows per sensor, kept current on every insert,
+            // instead of a scan of sensor_readings. A time range keeps sensors whose
+            // latest reading falls inside it, as the scan did.
+            const interval = this._parseTimeRange(timeRange);
+            const query_params = deviceIds ? { deviceIds } : {};
             const query = `
                 SELECT
                     device_id,
                     reading_type,
-                    argMax(value, timestamp) as latest_value,
-                    argMax(reading_type_name, timestamp) as reading_type_name,
-                    max(timestamp) as latest_timestamp,
-                    argMax(latitude, timestamp) as latitude,
-                    argMax(longitude, timestamp) as longitude,
-                    argMax(geo_country, timestamp) as geo_country,
-                    argMax(geo_subdivision, timestamp) as geo_subdivision,
-                    argMax(node_name, timestamp) as node_name,
-                    argMax(board_model, timestamp) as board_model,
-                    argMax(data_source, timestamp) as data_source,
-                    argMax(data_source_name, timestamp) as data_source_name,
-                    argMax(sensor_model, timestamp) as sensor_model,
-                    argMax(unit, timestamp) as unit,
-                    argMax(deployment_location, timestamp) as deployment_location,
-                    argMax(node_info, timestamp) as node_info,
-                    argMax(node_info_url, timestamp) as node_info_url
-                FROM sensor_readings
-                ${whereClause}
+                    argMaxMerge(value) as latest_value,
+                    argMaxMerge(reading_type_name) as reading_type_name,
+                    max(latest_timestamp) as latest_timestamp,
+                    argMaxMerge(latitude) as latitude,
+                    argMaxMerge(longitude) as longitude,
+                    argMaxMerge(geo_country) as geo_country,
+                    argMaxMerge(geo_subdivision) as geo_subdivision,
+                    argMaxMerge(node_name) as node_name,
+                    argMaxMerge(board_model) as board_model,
+                    argMaxMerge(data_source) as data_source,
+                    argMaxMerge(data_source_name) as data_source_name,
+                    argMaxMerge(sensor_model) as sensor_model,
+                    argMaxMerge(unit) as unit,
+                    argMaxMerge(deployment_location) as deployment_location,
+                    argMaxMerge(node_info) as node_info,
+                    argMaxMerge(node_info_url) as node_info_url
+                FROM wesense.sensor_latest
+                ${deviceIds ? 'WHERE device_id IN {deviceIds:Array(String)}' : ''}
                 GROUP BY device_id, reading_type
+                ${interval ? `HAVING max(latest_timestamp) > now() - INTERVAL ${interval}` : ''}
                 ORDER BY device_id, reading_type
+                SETTINGS prefer_column_name_to_alias = 1
             `;
 
             // Readings and each device's effective deployment type, in parallel
@@ -876,30 +881,50 @@ class ClickHouseClient {
         this._requireConnection();
 
         try {
-            // Get all unique devices with their latest info and recent readings
+            // One row per device from wesense.sensor_latest (migration 011): device
+            // details from its most recent reading of any type, plus latest
+            // temperature and humidity. No scan of sensor_readings.
             const query = `
                 SELECT
                     device_id,
-                    argMax(node_name, timestamp) as node_name,
-                    argMax(deployment_location, timestamp) as deployment_location,
-                    argMax(latitude, timestamp) as latitude,
-                    argMax(longitude, timestamp) as longitude,
-                    argMax(geo_country, timestamp) as geo_country,
-                    argMax(geo_subdivision, timestamp) as geo_subdivision,
-                    argMax(board_model, timestamp) as board_model,
-                    argMax(data_source, timestamp) as data_source,
+                    argMax(l_node_name, l_ts) as node_name,
+                    argMax(l_deployment_location, l_ts) as deployment_location,
+                    argMax(l_latitude, l_ts) as latitude,
+                    argMax(l_longitude, l_ts) as longitude,
+                    argMax(l_geo_country, l_ts) as geo_country,
+                    argMax(l_geo_subdivision, l_ts) as geo_subdivision,
+                    argMax(l_board_model, l_ts) as board_model,
+                    argMax(l_data_source, l_ts) as data_source,
                     any(dt.deployment_type) as deployment_type,
                     any(dt.deployment_type_source) as deployment_type_source,
-                    argMax(node_info, timestamp) as node_info,
-                    argMax(node_info_url, timestamp) as node_info_url,
-                    max(timestamp) as last_seen,
-                    count() as reading_count,
-                    -- Latest temperature and humidity values
-                    argMaxIf(value, timestamp, reading_type = 'temperature') as temperature,
-                    argMaxIf(value, timestamp, reading_type = 'humidity') as humidity,
-                    maxIf(timestamp, reading_type = 'temperature') as temperature_timestamp,
-                    maxIf(timestamp, reading_type = 'humidity') as humidity_timestamp
-                FROM sensor_readings
+                    argMax(l_node_info, l_ts) as node_info,
+                    argMax(l_node_info_url, l_ts) as node_info_url,
+                    max(l_ts) as last_seen,
+                    sum(l_count) as reading_count,
+                    anyIf(l_value, reading_type = 'temperature') as temperature,
+                    anyIf(l_value, reading_type = 'humidity') as humidity,
+                    maxIf(l_ts, reading_type = 'temperature') as temperature_timestamp,
+                    maxIf(l_ts, reading_type = 'humidity') as humidity_timestamp
+                FROM (
+                    SELECT
+                        device_id,
+                        reading_type,
+                        max(latest_timestamp) as l_ts,
+                        sum(reading_count) as l_count,
+                        argMaxMerge(value) as l_value,
+                        argMaxMerge(node_name) as l_node_name,
+                        argMaxMerge(deployment_location) as l_deployment_location,
+                        argMaxMerge(latitude) as l_latitude,
+                        argMaxMerge(longitude) as l_longitude,
+                        argMaxMerge(geo_country) as l_geo_country,
+                        argMaxMerge(geo_subdivision) as l_geo_subdivision,
+                        argMaxMerge(board_model) as l_board_model,
+                        argMaxMerge(data_source) as l_data_source,
+                        argMaxMerge(node_info) as l_node_info,
+                        argMaxMerge(node_info_url) as l_node_info_url
+                    FROM wesense.sensor_latest
+                    GROUP BY device_id, reading_type
+                ) AS latest
                 LEFT JOIN wesense.device_deployment_types AS dt USING (device_id)
                 GROUP BY device_id
                 ORDER BY last_seen DESC
