@@ -769,6 +769,28 @@ app.get('/', (req, res) => {
 // peers are listed in swarm_sensors.
 const SWARM_POOL_RANGE = '24h';
 
+// Network-wide results (every device's latest readings) are expensive to build
+// and change slowly, so each is built at most once per SHARED_RESULT_TTL_MS and
+// shared by every request: load stays the same however many people are viewing.
+// Requests arriving during a build wait for that build. A failed build is never
+// reused, so errors still reach the caller.
+const SHARED_RESULT_TTL_MS = 60 * 1000;
+const sharedResults = new Map(); // key -> { builtAt, promise }
+
+function sharedResult(key, build) {
+    const now = Date.now();
+    const entry = sharedResults.get(key);
+    if (entry && now - entry.builtAt < SHARED_RESULT_TTL_MS) {
+        return entry.promise;
+    }
+    const promise = build();
+    sharedResults.set(key, { builtAt: now, promise });
+    promise.catch(() => {
+        if (sharedResults.get(key)?.promise === promise) sharedResults.delete(key);
+    });
+    return promise;
+}
+
 /**
  * Build the /api/sensors response.
  * @param {Object} poolData - sensors used to compute swarm (H3 cell) statistics
@@ -1081,7 +1103,7 @@ app.get('/api/sensors', async (req, res) => {
                 return res.status(400).json({ error: 'devices must list at least one device id' });
             }
             const [poolData, deviceData] = await Promise.all([
-                clickHouseClient.queryLatestSensors(SWARM_POOL_RANGE),
+                sharedResult(`latest:${SWARM_POOL_RANGE}`, () => clickHouseClient.queryLatestSensors(SWARM_POOL_RANGE)),
                 // Latest readings over all time (a favourite may have gone quiet),
                 // sparklines/trends from the last 24h
                 clickHouseClient.queryAverageData('all', deviceIds, '24h')
@@ -1091,8 +1113,11 @@ app.get('/api/sensors', async (req, res) => {
 
         // Respect the requested time range - only show sensors with data in that period
         const timeRange = req.query.range || '24h';
-        const rawData = await clickHouseClient.queryAverageData(timeRange);
-        return res.json(buildSensorResponse(rawData, rawData));
+        const response = await sharedResult(`sensors:${timeRange}`, async () => {
+            const rawData = await clickHouseClient.queryAverageData(timeRange);
+            return buildSensorResponse(rawData, rawData);
+        });
+        return res.json(response);
     } catch (error) {
         console.error('Error fetching sensors from ClickHouse:', error);
         // Full error stays in the server log; ClickHouse messages can include query text and hosts
@@ -1103,7 +1128,7 @@ app.get('/api/sensors', async (req, res) => {
 app.get('/api/sensors/average', async (req, res) => {
     try {
         const timeRange = req.query.range || '24h';
-        const rawData = await clickHouseClient.queryAverageData(timeRange);
+        const rawData = await sharedResult(`average:${timeRange}`, () => clickHouseClient.queryAverageData(timeRange));
         res.json(rawData);
     } catch (error) {
         console.error('Error fetching sensor averages:', error);
@@ -1114,7 +1139,7 @@ app.get('/api/sensors/average', async (req, res) => {
 // Get all known devices (for Dashboard overview - not time-limited)
 app.get('/api/devices', async (req, res) => {
     try {
-        const devices = await clickHouseClient.queryAllDevices();
+        const devices = await sharedResult('devices', () => clickHouseClient.queryAllDevices());
         res.json({ devices });
     } catch (error) {
         console.error('Error fetching devices:', error);
@@ -1201,7 +1226,7 @@ app.get('/api/prediction', async (req, res) => {
 app.get('/api/history/average', async (req, res) => {
     try {
         const timeRange = req.query.range || '24h';
-        const rawData = await clickHouseClient.queryAverageData(timeRange);
+        const rawData = await sharedResult(`average:${timeRange}`, () => clickHouseClient.queryAverageData(timeRange));
 
         // Transform to expected format, preserving sparklineData and trend
         const averageData = {};
