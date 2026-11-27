@@ -116,10 +116,6 @@ class ClickHouseClient {
                     argMax(sensor_model, timestamp) as sensor_model,
                     argMax(unit, timestamp) as unit,
                     argMax(deployment_location, timestamp) as deployment_location,
-                    -- Prefer non-empty deployment_type (new rows may not have it set yet)
-                    -- Note: This only looks within the time range, we'll backfill from historical data below
-                    argMaxIf(deployment_type, timestamp, deployment_type != '') as deployment_type,
-                    argMaxIf(deployment_type_source, timestamp, deployment_type_source != '') as deployment_type_source,
                     argMax(node_info, timestamp) as node_info,
                     argMax(node_info_url, timestamp) as node_info_url
                 FROM sensor_readings
@@ -128,8 +124,8 @@ class ClickHouseClient {
                 ORDER BY device_id, reading_type
             `;
 
-            // Run both queries in parallel: main sensor data and historical deployment types
-            const [sensorResult, historicalDeploymentTypes] = await Promise.all([
+            // Readings and each device's effective deployment type, in parallel
+            const [sensorResult, deploymentTypes] = await Promise.all([
                 this.client.query({ query, format: 'JSONEachRow', query_params }),
                 this.queryDeviceDeploymentTypes(deviceIds)
             ]);
@@ -143,27 +139,21 @@ class ClickHouseClient {
                 const deviceId = row.device_id;
 
                 if (!sensorData[deviceId]) {
-                    // Use deployment_type from this time range if available,
-                    // otherwise fall back to historical deployment_type
-                    let deploymentType = row.deployment_type;
-                    let deploymentTypeSource = row.deployment_type_source;
-
-                    if (!deploymentType && historicalDeploymentTypes[deviceId]) {
-                        deploymentType = historicalDeploymentTypes[deviceId].deployment_type;
-                        deploymentTypeSource = historicalDeploymentTypes[deviceId].deployment_type_source;
-                    }
-
+                    const types = deploymentTypes[deviceId];
+                    // A remote classification supplies name and position only where
+                    // the device's own readings have none
+                    const noPosition = !row.latitude && !row.longitude;
                     sensorData[deviceId] = {
-                        latitude: row.latitude,
-                        longitude: row.longitude,
+                        latitude: noPosition && types?.classified_latitude != null ? types.classified_latitude : row.latitude,
+                        longitude: noPosition && types?.classified_longitude != null ? types.classified_longitude : row.longitude,
                         geo_country: row.geo_country,
                         geo_subdivision: row.geo_subdivision,
-                        node_name: row.node_name,
+                        node_name: row.node_name || types?.classified_node_name || '',
                         board_model: row.board_model,
                         data_source: row.data_source,
                         deployment_location: row.deployment_location,
-                        deployment_type: deploymentType,
-                        deployment_type_source: deploymentTypeSource,
+                        deployment_type: types?.deployment_type || '',
+                        deployment_type_source: types?.deployment_type_source || '',
                         node_info: row.node_info,
                         node_info_url: row.node_info_url,
                         readings: {}
@@ -883,10 +873,7 @@ class ClickHouseClient {
     }
 
     async queryAllDevices() {
-        if (!this.connected || !this.client) {
-            console.log('ClickHouse not connected');
-            return [];
-        }
+        this._requireConnection();
 
         try {
             // Get all unique devices with their latest info and recent readings
@@ -901,9 +888,8 @@ class ClickHouseClient {
                     argMax(geo_subdivision, timestamp) as geo_subdivision,
                     argMax(board_model, timestamp) as board_model,
                     argMax(data_source, timestamp) as data_source,
-                    -- Prefer non-empty deployment_type (new rows may not have it set yet)
-                    argMaxIf(deployment_type, timestamp, deployment_type != '') as deployment_type,
-                    argMaxIf(deployment_type_source, timestamp, deployment_type_source != '') as deployment_type_source,
+                    any(dt.deployment_type) as deployment_type,
+                    any(dt.deployment_type_source) as deployment_type_source,
                     argMax(node_info, timestamp) as node_info,
                     argMax(node_info_url, timestamp) as node_info_url,
                     max(timestamp) as last_seen,
@@ -914,6 +900,7 @@ class ClickHouseClient {
                     maxIf(timestamp, reading_type = 'temperature') as temperature_timestamp,
                     maxIf(timestamp, reading_type = 'humidity') as humidity_timestamp
                 FROM sensor_readings
+                LEFT JOIN wesense.device_deployment_types AS dt USING (device_id)
                 GROUP BY device_id
                 ORDER BY last_seen DESC
             `;
@@ -947,7 +934,7 @@ class ClickHouseClient {
 
         } catch (error) {
             console.error('Failed to query all devices:', error.message);
-            return [];
+            throw error;
         }
     }
 
@@ -1133,47 +1120,30 @@ class ClickHouseClient {
     }
 
     /**
-     * Get the most recent non-empty deployment_type for each device
-     * This queries ALL time (no time filter) to find historical classifications
-     * @returns {Object} Map of device_id -> { deployment_type, deployment_type_source }
-     */
-    /**
-     * Most recent non-empty deployment type per device, across all history.
+     * Effective deployment type per device (the device's own reported type, or the
+     * deployment classifier's), from the wesense.device_deployment_types view
+     * (migration 010). One small row per device; no scan of sensor_readings.
      * @param {string[]|null} deviceIds - restrict to these devices (null = whole network)
      */
     async queryDeviceDeploymentTypes(deviceIds = null) {
         this._requireConnection();
 
-        try {
-            const { whereClause, query_params } = this._buildReadingsWhere('all', deviceIds);
-            const query = `
-                SELECT
-                    device_id,
-                    argMaxIf(deployment_type, timestamp, deployment_type != '') as deployment_type,
-                    argMaxIf(deployment_type_source, timestamp, deployment_type_source != '') as deployment_type_source
-                FROM sensor_readings
-                ${whereClause}
-                GROUP BY device_id
-                HAVING deployment_type != ''
-            `;
-
-            const result = await this.client.query({ query, format: 'JSONEachRow', query_params });
-            const rows = await result.json();
-
-            const deploymentTypes = {};
-            for (const row of rows) {
-                deploymentTypes[row.device_id] = {
-                    deployment_type: row.deployment_type,
-                    deployment_type_source: row.deployment_type_source
-                };
-            }
-
-            return deploymentTypes;
-
-        } catch (error) {
-            console.error('Failed to query device deployment types:', error.message);
-            throw error;
+        const query = `
+            SELECT device_id, deployment_type, deployment_type_source,
+                   classified_node_name, classified_latitude, classified_longitude
+            FROM wesense.device_deployment_types
+            ${deviceIds ? 'WHERE device_id IN {deviceIds:Array(String)}' : ''}
+        `;
+        const result = await this.client.query({
+            query,
+            format: 'JSONEachRow',
+            query_params: deviceIds ? { deviceIds } : {}
+        });
+        const deploymentTypes = {};
+        for (const row of await result.json()) {
+            deploymentTypes[row.device_id] = row;
         }
+        return deploymentTypes;
     }
 
     /**

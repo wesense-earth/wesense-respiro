@@ -265,7 +265,7 @@ class RegionService {
         // 'all' or empty = no filter
         // 'outdoor' (legacy) = OUTDOOR + MIXED (for environmental monitoring, MIXED sensors are similar to outdoor)
         // 'UNKNOWN' matches NULL or empty deployment_type (device never classified)
-        let deploymentHavingClause = '';
+        let deploymentWhereClause = '';
         const deploymentParams = {};
         if (deploymentFilter && deploymentFilter !== 'all') {
             // Expand 'outdoor' to include MIXED sensors (they behave similarly for env monitoring)
@@ -291,7 +291,7 @@ class RegionService {
                 }
 
                 if (conditions.length > 0) {
-                    deploymentHavingClause = `HAVING ${conditions.join(' OR ')}`;
+                    deploymentWhereClause = `WHERE ${conditions.join(' OR ')}`;
                 }
             }
         }
@@ -308,12 +308,10 @@ class RegionService {
                     WITH
                     -- First, get each device's deployment_type from ALL TIME (not just time window)
                     device_classifications AS (
-                        SELECT
-                            device_id,
-                            argMaxIf(deployment_type, timestamp, deployment_type != '') as device_deployment_type
-                        FROM wesense.sensor_readings
-                        GROUP BY device_id
-                        ${deploymentHavingClause}
+                        -- Effective type per device from the migration 010 view (no scan of sensor_readings)
+                        SELECT device_id, deployment_type AS device_deployment_type
+                        FROM wesense.device_deployment_types
+                        ${deploymentWhereClause}
                     ),
                     -- Then aggregate readings only from the time window, for classified devices
                     device_data AS (
@@ -378,12 +376,10 @@ class RegionService {
                     WITH
                     -- First, get each device's deployment_type from ALL TIME (not just time window)
                     device_classifications AS (
-                        SELECT
-                            device_id,
-                            argMaxIf(deployment_type, timestamp, deployment_type != '') as device_deployment_type
-                        FROM wesense.sensor_readings
-                        GROUP BY device_id
-                        ${deploymentHavingClause}
+                        -- Effective type per device from the migration 010 view (no scan of sensor_readings)
+                        SELECT device_id, deployment_type AS device_deployment_type
+                        FROM wesense.device_deployment_types
+                        ${deploymentWhereClause}
                     ),
                     -- Then aggregate readings only from the time window, for classified devices
                     device_data AS (
@@ -492,7 +488,7 @@ class RegionService {
         };
 
         // Build deployment filter HAVING clause (same as precomputeRegions)
-        let deploymentHavingClause = '';
+        let deploymentWhereClause = '';
         const deploymentParams = {};
         if (deploymentFilter && deploymentFilter !== 'all') {
             let expandedFilter = deploymentFilter;
@@ -515,7 +511,7 @@ class RegionService {
                 }
 
                 if (conditions.length > 0) {
-                    deploymentHavingClause = `HAVING ${conditions.join(' OR ')}`;
+                    deploymentWhereClause = `WHERE ${conditions.join(' OR ')}`;
                 }
             }
         }
@@ -528,12 +524,10 @@ class RegionService {
                 query = `
                     WITH
                     device_classifications AS (
-                        SELECT
-                            device_id,
-                            argMaxIf(deployment_type, timestamp, deployment_type != '') as device_deployment_type
-                        FROM wesense.sensor_readings
-                        GROUP BY device_id
-                        ${deploymentHavingClause}
+                        -- Effective type per device from the migration 010 view (no scan of sensor_readings)
+                        SELECT device_id, deployment_type AS device_deployment_type
+                        FROM wesense.device_deployment_types
+                        ${deploymentWhereClause}
                     ),
                     device_data AS (
                         SELECT
@@ -593,12 +587,10 @@ class RegionService {
                 query = `
                     WITH
                     device_classifications AS (
-                        SELECT
-                            device_id,
-                            argMaxIf(deployment_type, timestamp, deployment_type != '') as device_deployment_type
-                        FROM wesense.sensor_readings
-                        GROUP BY device_id
-                        ${deploymentHavingClause}
+                        -- Effective type per device from the migration 010 view (no scan of sensor_readings)
+                        SELECT device_id, deployment_type AS device_deployment_type
+                        FROM wesense.device_deployment_types
+                        ${deploymentWhereClause}
                     ),
                     device_data AS (
                         SELECT
@@ -693,7 +685,7 @@ class RegionService {
         const endTime = new Date(centerTime + windowMs / 2).toISOString().replace('T', ' ').replace('Z', '');
 
         // Build deployment filter
-        let deploymentHavingClause = '';
+        let deploymentWhereClause = '';
         const deploymentParams = {};
         if (deploymentFilter && deploymentFilter !== 'all') {
             let expandedFilter = deploymentFilter;
@@ -712,7 +704,7 @@ class RegionService {
                     deploymentParams.deploymentTypes = knownTypes;
                 }
                 if (conditions.length > 0) {
-                    deploymentHavingClause = `HAVING ${conditions.join(' OR ')}`;
+                    deploymentWhereClause = `WHERE ${conditions.join(' OR ')}`;
                 }
             }
         }
@@ -724,11 +716,10 @@ class RegionService {
             const query = `
                 WITH
                 device_classifications AS (
-                    SELECT device_id,
-                           argMaxIf(deployment_type, timestamp, deployment_type != '') as device_deployment_type
-                    FROM wesense.sensor_readings
-                    GROUP BY device_id
-                    ${deploymentHavingClause}
+                    -- Effective type per device from the migration 010 view (no scan of sensor_readings)
+                    SELECT device_id, deployment_type AS device_deployment_type
+                    FROM wesense.device_deployment_types
+                    ${deploymentWhereClause}
                 ),
                 device_data AS (
                     SELECT sr.device_id,
@@ -1793,11 +1784,9 @@ class RegionService {
                 WITH
                 -- Get each device's deployment_type from ALL TIME (not just time window)
                 device_classifications AS (
-                    SELECT
-                        device_id,
-                        argMaxIf(deployment_type, timestamp, deployment_type != '') as deployment_type
-                    FROM wesense.sensor_readings
-                    GROUP BY device_id
+                    -- Effective type per device from the migration 010 view (no scan of sensor_readings)
+                    SELECT device_id, deployment_type AS deployment_type
+                    FROM wesense.device_deployment_types
                 ),
                 -- Get device data from time window
                 device_locations AS (
