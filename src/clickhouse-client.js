@@ -55,16 +55,47 @@ class ClickHouseClient {
         }
     }
 
-    async queryLatestSensors(timeRange = '24h') {
+    _requireConnection() {
         if (!this.connected || !this.client) {
-            console.log('ClickHouse not connected');
-            return {};
+            throw new Error('ClickHouse not connected');
+        }
+    }
+
+    /**
+     * Build a WHERE clause from an optional time range and an optional device list.
+     * Filtering on device_id lets ClickHouse use the table's primary key
+     * (device_id, reading_type, timestamp) and read only those devices' data,
+     * which keeps all-time queries cheap.
+     */
+    _buildReadingsWhere(timeRange, deviceIds = null) {
+        const conditions = [];
+        const query_params = {};
+
+        const interval = this._parseTimeRange(timeRange);
+        if (interval) {
+            conditions.push(`timestamp > now() - INTERVAL ${interval}`);
+        }
+        if (deviceIds) {
+            conditions.push('device_id IN {deviceIds:Array(String)}');
+            query_params.deviceIds = deviceIds;
         }
 
+        return {
+            whereClause: conditions.length ? `WHERE ${conditions.join(' AND ')}` : '',
+            query_params
+        };
+    }
+
+    /**
+     * Latest reading per device per reading_type.
+     * @param {string} timeRange - e.g. '24h', '7d', or 'all' for no time filter
+     * @param {string[]|null} deviceIds - restrict to these devices (null = whole network)
+     */
+    async queryLatestSensors(timeRange = '24h', deviceIds = null) {
+        this._requireConnection();
+
         try {
-            // Convert time range to interval (null means no time filter)
-            const interval = this._parseTimeRange(timeRange);
-            const whereClause = interval ? `WHERE timestamp > now() - INTERVAL ${interval}` : '';
+            const { whereClause, query_params } = this._buildReadingsWhere(timeRange, deviceIds);
 
             // Get latest reading per device per reading_type, with location info
             const query = `
@@ -99,8 +130,8 @@ class ClickHouseClient {
 
             // Run both queries in parallel: main sensor data and historical deployment types
             const [sensorResult, historicalDeploymentTypes] = await Promise.all([
-                this.client.query({ query, format: 'JSONEachRow' }),
-                this.queryDeviceDeploymentTypes()
+                this.client.query({ query, format: 'JSONEachRow', query_params }),
+                this.queryDeviceDeploymentTypes(deviceIds)
             ]);
 
             const rows = await sensorResult.json();
@@ -154,18 +185,15 @@ class ClickHouseClient {
 
         } catch (error) {
             console.error('Failed to query latest sensors:', error.message);
-            return {};
+            throw error;
         }
     }
 
-    async querySparklineData(timeRange = '24h', pointsPerDevice = 48) {
-        if (!this.connected || !this.client) {
-            return {};
-        }
+    async querySparklineData(timeRange = '24h', pointsPerDevice = 48, deviceIds = null) {
+        this._requireConnection();
 
         try {
-            const interval = this._parseTimeRange(timeRange);
-            const whereClause = interval ? `WHERE timestamp > now() - INTERVAL ${interval}` : '';
+            const { whereClause, query_params } = this._buildReadingsWhere(timeRange, deviceIds);
 
             // Determine bucket size based on time range for proper aggregation
             // This ensures we get meaningful data points across the entire time range
@@ -211,7 +239,7 @@ class ClickHouseClient {
                 `;
             }
 
-            const result = await this.client.query({ query, format: 'JSONEachRow' });
+            const result = await this.client.query({ query, format: 'JSONEachRow', query_params });
             const rows = await result.json();
 
             const sparklineData = {};
@@ -240,23 +268,36 @@ class ClickHouseClient {
 
         } catch (error) {
             console.error('Failed to query sparkline data:', error.message);
-            return {};
+            throw error;
         }
     }
 
+    /**
+     * Decide whether a sparkline/history query returns raw points or time buckets.
+     *
+     * 'all' has no time filter, so it is always bucketed (weekly). Returning raw
+     * points for 'all' makes ClickHouse sort the whole table (network sparklines)
+     * or ship every reading a sensor ever sent (detail charts). See
+     * wesense-docs/architecture/respiro-query-performance.md.
+     *
+     * Units match _parseTimeRange: m = minutes, M = months.
+     */
     _getSparklineBucketConfig(timeRange) {
-        // Determine appropriate bucket size based on time range
-        const match = timeRange.match(/^(\d+)([hdwmy])$/);
+        if (timeRange === 'all') {
+            return { useBuckets: true, bucketSize: '1 WEEK' };
+        }
+
+        const match = timeRange.match(/^(\d+)([mhdwMy])$/);
         if (!match) {
-            return { useBuckets: false, bucketSize: null };
+            throw new Error(`Unsupported time range '${timeRange}': use a number with m, h, d, w, M or y (e.g. 30m, 24h, 7d, 1y), or 'all'`);
         }
 
         const value = parseInt(match[1]);
         const unit = match[2];
 
         // Convert to hours for comparison
-        const multipliers = { h: 1, d: 24, w: 168, m: 720, y: 8760 };
-        const totalHours = value * (multipliers[unit] || 24);
+        const hoursPerUnit = { m: 1 / 60, h: 1, d: 24, w: 168, M: 720, y: 8760 };
+        const totalHours = value * hoursPerUnit[unit];
 
         if (totalHours <= 24) {
             // 24h or less: use raw data points
@@ -358,7 +399,6 @@ class ClickHouseClient {
 
             // Determine bucket size based on time range
             const bucketSeconds = this._getBucketSize(timeRange);
-            const deviceFilter = deviceIds.map(id => `'${id}'`).join(',');
 
             const query = `
                 SELECT
@@ -368,7 +408,7 @@ class ClickHouseClient {
                     max(value) as max_value,
                     count() as count
                 FROM sensor_readings
-                WHERE device_id IN (${deviceFilter})
+                WHERE device_id IN {deviceIds:Array(String)}
                   AND reading_type = {readingType:String}
                   ${timeFilter}
                 GROUP BY bucket
@@ -378,7 +418,7 @@ class ClickHouseClient {
             const result = await this.client.query({
                 query,
                 format: 'JSONEachRow',
-                query_params: { readingType }
+                query_params: { deviceIds, readingType }
             });
 
             const rows = await result.json();
@@ -414,7 +454,6 @@ class ClickHouseClient {
         }
 
         try {
-            const deviceFilter = deviceIds.map(id => `'${id}'`).join(',');
 
             // Query for yesterday at same time (±30 min window), 24h ago, and last week same time (±1 hour)
             const query = `
@@ -443,7 +482,7 @@ class ClickHouseClient {
                     ) as current_value
 
                 FROM sensor_readings
-                WHERE device_id IN (${deviceFilter})
+                WHERE device_id IN {deviceIds:Array(String)}
                   AND reading_type = {readingType:String}
                   AND timestamp > now() - INTERVAL 8 DAY
             `;
@@ -451,7 +490,7 @@ class ClickHouseClient {
             const result = await this.client.query({
                 query,
                 format: 'JSONEachRow',
-                query_params: { readingType }
+                query_params: { deviceIds, readingType }
             });
 
             const rows = await result.json();
@@ -487,7 +526,6 @@ class ClickHouseClient {
         }
 
         try {
-            const deviceFilter = deviceIds.map(id => `'${id}'`).join(',');
 
             // Query 1: Build diurnal curve (average temp for each hour over past 14 days)
             // Query 2: Get current temperature and recent trend
@@ -501,7 +539,7 @@ class ClickHouseClient {
                             stddevPop(value) as std_temp,
                             count() as sample_count
                         FROM sensor_readings
-                        WHERE device_id IN (${deviceFilter})
+                        WHERE device_id IN {deviceIds:Array(String)}
                           AND reading_type = 'temperature'
                           AND timestamp > now() - INTERVAL 14 DAY
                         GROUP BY hour_of_day
@@ -513,7 +551,7 @@ class ClickHouseClient {
                             avg(value) as current_temp,
                             toHour(now()) as current_hour
                         FROM sensor_readings
-                        WHERE device_id IN (${deviceFilter})
+                        WHERE device_id IN {deviceIds:Array(String)}
                           AND reading_type = 'temperature'
                           AND timestamp > now() - INTERVAL 15 MINUTE
                     ),
@@ -523,7 +561,7 @@ class ClickHouseClient {
                             avgIf(value, timestamp > now() - INTERVAL 1 HOUR) as recent_temp,
                             avgIf(value, timestamp > now() - INTERVAL 4 HOUR AND timestamp < now() - INTERVAL 3 HOUR) as earlier_temp
                         FROM sensor_readings
-                        WHERE device_id IN (${deviceFilter})
+                        WHERE device_id IN {deviceIds:Array(String)}
                           AND reading_type = 'temperature'
                           AND timestamp > now() - INTERVAL 4 HOUR
                     )
@@ -550,7 +588,8 @@ class ClickHouseClient {
 
             const result = await this.client.query({
                 query,
-                format: 'JSONEachRow'
+                format: 'JSONEachRow',
+                query_params: { deviceIds }
             });
 
             const rows = await result.json();
@@ -712,16 +751,20 @@ class ClickHouseClient {
         return buckets[timeRange] || 1800;
     }
 
-    async queryAverageData(timeRange = '24h') {
-        if (!this.connected || !this.client) {
-            console.log('ClickHouse not connected');
-            return {};
-        }
+    /**
+     * Latest readings with sparkline data and trends merged in.
+     * @param {string} timeRange - window for the latest readings ('all' = no limit)
+     * @param {string[]|null} deviceIds - restrict to these devices (null = whole network)
+     * @param {string} sparklineRange - window for sparklines/trends (defaults to timeRange)
+     */
+    async queryAverageData(timeRange = '24h', deviceIds = null, sparklineRange = timeRange) {
+        this._requireConnection();
 
         try {
-            // Get latest sensors with sparkline data merged in
-            const sensorData = await this.queryLatestSensors(timeRange);
-            const sparklineData = await this.querySparklineData(timeRange);
+            const [sensorData, sparklineData] = await Promise.all([
+                this.queryLatestSensors(timeRange, deviceIds),
+                this.querySparklineData(sparklineRange, 48, deviceIds)
+            ]);
 
             // Merge sparkline data and calculate trends
             for (const [deviceId, device] of Object.entries(sensorData)) {
@@ -764,7 +807,7 @@ class ClickHouseClient {
 
         } catch (error) {
             console.error('Failed to query average data:', error.message);
-            return {};
+            throw error;
         }
     }
 
@@ -1016,8 +1059,6 @@ class ClickHouseClient {
         }
 
         try {
-            // Build device filter - escape single quotes in device IDs
-            const deviceFilter = deviceIds.map(id => `'${id.replace(/'/g, "''")}'`).join(',');
             const comparison = {};
 
             // Query each reading type separately for reliability
@@ -1034,14 +1075,15 @@ class ClickHouseClient {
                             min(if(timestamp > toStartOfDay(now()), value, NULL)) as today_min,
                             max(if(timestamp > toStartOfDay(now()), value, NULL)) as today_max
                         FROM sensor_readings
-                        WHERE device_id IN (${deviceFilter})
-                          AND reading_type = '${readingType}'
+                        WHERE device_id IN {deviceIds:Array(String)}
+                          AND reading_type = {readingType:String}
                           AND timestamp > now() - INTERVAL 7 DAY
                     `;
 
                     const result = await this.client.query({
                         query,
-                        format: 'JSONEachRow'
+                        format: 'JSONEachRow',
+                        query_params: { deviceIds, readingType }
                     });
 
                     const rows = await result.json();
@@ -1092,23 +1134,27 @@ class ClickHouseClient {
      * This queries ALL time (no time filter) to find historical classifications
      * @returns {Object} Map of device_id -> { deployment_type, deployment_type_source }
      */
-    async queryDeviceDeploymentTypes() {
-        if (!this.connected || !this.client) {
-            return {};
-        }
+    /**
+     * Most recent non-empty deployment type per device, across all history.
+     * @param {string[]|null} deviceIds - restrict to these devices (null = whole network)
+     */
+    async queryDeviceDeploymentTypes(deviceIds = null) {
+        this._requireConnection();
 
         try {
+            const { whereClause, query_params } = this._buildReadingsWhere('all', deviceIds);
             const query = `
                 SELECT
                     device_id,
                     argMaxIf(deployment_type, timestamp, deployment_type != '') as deployment_type,
                     argMaxIf(deployment_type_source, timestamp, deployment_type_source != '') as deployment_type_source
                 FROM sensor_readings
+                ${whereClause}
                 GROUP BY device_id
                 HAVING deployment_type != ''
             `;
 
-            const result = await this.client.query({ query, format: 'JSONEachRow' });
+            const result = await this.client.query({ query, format: 'JSONEachRow', query_params });
             const rows = await result.json();
 
             const deploymentTypes = {};
@@ -1123,7 +1169,7 @@ class ClickHouseClient {
 
         } catch (error) {
             console.error('Failed to query device deployment types:', error.message);
-            return {};
+            throw error;
         }
     }
 

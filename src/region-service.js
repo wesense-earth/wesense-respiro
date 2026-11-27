@@ -266,6 +266,7 @@ class RegionService {
         // 'outdoor' (legacy) = OUTDOOR + MIXED (for environmental monitoring, MIXED sensors are similar to outdoor)
         // 'UNKNOWN' matches NULL or empty deployment_type (device never classified)
         let deploymentHavingClause = '';
+        const deploymentParams = {};
         if (deploymentFilter && deploymentFilter !== 'all') {
             // Expand 'outdoor' to include MIXED sensors (they behave similarly for env monitoring)
             let expandedFilter = deploymentFilter;
@@ -285,8 +286,8 @@ class RegionService {
                     conditions.push("(device_deployment_type IS NULL OR device_deployment_type = '')");
                 }
                 if (knownTypes.length > 0) {
-                    const typeList = knownTypes.map(t => `'${t}'`).join(',');
-                    conditions.push(`device_deployment_type IN (${typeList})`);
+                    conditions.push('device_deployment_type IN {deploymentTypes:Array(String)}');
+                    deploymentParams.deploymentTypes = knownTypes;
                 }
 
                 if (conditions.length > 0) {
@@ -421,7 +422,7 @@ class RegionService {
 
             const result = await this.clickhouse.query({
                 query,
-                query_params: { metric, adminLevel },
+                query_params: { metric, adminLevel, ...deploymentParams },
                 format: 'JSONEachRow'
             });
 
@@ -492,6 +493,7 @@ class RegionService {
 
         // Build deployment filter HAVING clause (same as precomputeRegions)
         let deploymentHavingClause = '';
+        const deploymentParams = {};
         if (deploymentFilter && deploymentFilter !== 'all') {
             let expandedFilter = deploymentFilter;
             if (deploymentFilter.toLowerCase() === 'outdoor') {
@@ -508,8 +510,8 @@ class RegionService {
                     conditions.push("(device_deployment_type IS NULL OR device_deployment_type = '')");
                 }
                 if (knownTypes.length > 0) {
-                    const typeList = knownTypes.map(t => `'${t}'`).join(',');
-                    conditions.push(`device_deployment_type IN (${typeList})`);
+                    conditions.push('device_deployment_type IN {deploymentTypes:Array(String)}');
+                    deploymentParams.deploymentTypes = knownTypes;
                 }
 
                 if (conditions.length > 0) {
@@ -634,7 +636,7 @@ class RegionService {
 
             const result = await this.clickhouse.query({
                 query,
-                query_params: { metric, adminLevel, startTime, endTime },
+                query_params: { metric, adminLevel, startTime, endTime, ...deploymentParams },
                 format: 'JSONEachRow'
             });
 
@@ -692,6 +694,7 @@ class RegionService {
 
         // Build deployment filter
         let deploymentHavingClause = '';
+        const deploymentParams = {};
         if (deploymentFilter && deploymentFilter !== 'all') {
             let expandedFilter = deploymentFilter;
             if (deploymentFilter.toLowerCase() === 'outdoor') {
@@ -705,7 +708,8 @@ class RegionService {
                 }
                 const knownTypes = types.filter(t => t !== 'UNKNOWN');
                 if (knownTypes.length > 0) {
-                    conditions.push(`device_deployment_type IN (${knownTypes.map(t => `'${t}'`).join(',')})`);
+                    conditions.push('device_deployment_type IN {deploymentTypes:Array(String)}');
+                    deploymentParams.deploymentTypes = knownTypes;
                 }
                 if (conditions.length > 0) {
                     deploymentHavingClause = `HAVING ${conditions.join(' OR ')}`;
@@ -753,7 +757,7 @@ class RegionService {
 
             const result = await this.clickhouse.query({
                 query,
-                query_params: { metric, regionId, startTime, endTime },
+                query_params: { metric, regionId, startTime, endTime, ...deploymentParams },
                 format: 'JSONEachRow'
             });
 
@@ -1742,6 +1746,7 @@ class RegionService {
         // 'outdoor' (legacy) = OUTDOOR + MIXED (for environmental monitoring)
         // 'UNKNOWN' matches NULL or empty deployment_type
         let deploymentClause = '';
+        const deploymentParams = {};
         if (deploymentFilter && deploymentFilter !== 'all') {
             // Expand 'outdoor' to include MIXED sensors
             let expandedFilter = deploymentFilter;
@@ -1761,8 +1766,8 @@ class RegionService {
                     conditions.push("(dc.deployment_type IS NULL OR dc.deployment_type = '')");
                 }
                 if (knownTypes.length > 0) {
-                    const typeList = knownTypes.map(t => `'${t}'`).join(',');
-                    conditions.push(`dc.deployment_type IN (${typeList})`);
+                    conditions.push('dc.deployment_type IN {deploymentTypes:Array(String)}');
+                    deploymentParams.deploymentTypes = knownTypes;
                 }
 
                 if (conditions.length > 0) {
@@ -1830,7 +1835,7 @@ class RegionService {
 
             const result = await this.clickhouse.query({
                 query,
-                query_params: { regionId, metric },
+                query_params: { regionId, metric, ...deploymentParams },
                 format: 'JSONEachRow'
             });
 

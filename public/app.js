@@ -12657,23 +12657,30 @@ class Respiro {
             return;
         }
 
-        // Fetch all-time data for favorited sensors (no time limit)
-        let favoritedSensors = [];
+        // Fetch latest all-time data for just the favorited sensors (shows stale ones too)
+        const errorMsg = document.getElementById('dashboardError');
+        let favoritedSensors;
         try {
-            // Use "all" to get all historical data without time limit
-            const response = await fetch('/api/sensors?range=all');
-            if (response.ok) {
-                const data = await response.json();
-                const allSensors = data.sensors || [];
-                // Don't filter by isSensorActive - show all favorited sensors
-                favoritedSensors = allSensors.filter(s => favorites.includes(s.deviceId));
+            const deviceList = favorites.map(id => encodeURIComponent(id)).join(',');
+            const response = await fetch(`/api/sensors?devices=${deviceList}`);
+            if (!response.ok) {
+                const body = await response.json().catch(() => ({}));
+                throw new Error(body.error || `HTTP ${response.status}`);
             }
+            const data = await response.json();
+            favoritedSensors = data.sensors;
         } catch (error) {
-            console.error('Failed to fetch sensor data:', error);
-            // Fallback to cached data
-            const allSensors = this.getFilteredSensors();
-            favoritedSensors = allSensors.filter(s => favorites.includes(s.deviceId));
+            console.error('Failed to fetch dashboard sensor data:', error);
+            if (loadingMsg) loadingMsg.style.display = 'none';
+            noFavoritesMsg.style.display = 'none';
+            widgetDashboard.style.display = 'none';
+            if (newDashboardLayout) newDashboardLayout.hide();
+            document.getElementById('dashboardErrorDetail').textContent =
+                `${error.message}. Check the Respiro server logs and its ClickHouse connection.`;
+            errorMsg.style.display = 'block';
+            return;
         }
+        errorMsg.style.display = 'none';
 
         if (favoritedSensors.length === 0) {
             if (loadingMsg) loadingMsg.style.display = 'none';
