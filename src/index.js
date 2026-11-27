@@ -1095,7 +1095,8 @@ app.get('/api/sensors', async (req, res) => {
         return res.json(buildSensorResponse(rawData, rawData));
     } catch (error) {
         console.error('Error fetching sensors from ClickHouse:', error);
-        return res.status(500).json({ error: `Failed to query sensors: ${error.message}` });
+        // Full error stays in the server log; ClickHouse messages can include query text and hosts
+        return res.status(500).json({ error: 'Failed to query sensors' });
     }
 });
 

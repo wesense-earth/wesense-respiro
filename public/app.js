@@ -12676,7 +12676,7 @@ class Respiro {
             widgetDashboard.style.display = 'none';
             if (newDashboardLayout) newDashboardLayout.hide();
             document.getElementById('dashboardErrorDetail').textContent =
-                `${error.message}. Check the Respiro server logs and its ClickHouse connection.`;
+                `${error.message}. The Respiro server log has the details; check its ClickHouse connection.`;
             errorMsg.style.display = 'block';
             return;
         }
